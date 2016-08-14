@@ -1,0 +1,4 @@
+lmdb==0.89
+msgpack-python==0.4.7
+schematics==2.0.0a1
+uvloop==0.4.30
