@@ -12,9 +12,10 @@ import json
 import uvloop
 
 
-import server_state
-import log as rlog
-from network import UDPProtocolProtobufClient, UDPProtocolProtobufServer, make_socket, ResetablePeriodicTask
+from . import server_state
+from . import log as rlog
+from . import models
+from .network import UDPProtocolProtobufClient, UDPProtocolProtobufServer, make_socket, ResetablePeriodicTask
 
 
 # <http://stackoverflow.com/a/14058475/2183102>

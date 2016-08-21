@@ -3,7 +3,7 @@ import itertools
 
 import lmdb
 
-from models import LogEntry
+from .models import LogEntry
 
 
 def u(n):

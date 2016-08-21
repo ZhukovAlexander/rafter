@@ -3,7 +3,7 @@ import socket
 import struct
 import logging
 
-import models
+from . import models
 
 logger = logging.getLogger()
 
