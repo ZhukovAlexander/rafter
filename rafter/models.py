@@ -9,7 +9,7 @@ class MsgpackModel(models.Model):
 
     @classmethod
     def unpack(cls, bytes):
-        return cls({k.decode(): value for k, value in msgpack.unpackb(bytes).items()})
+        return cls({k: value for k, value in msgpack.unpackb(bytes, encoding='utf-8').items()})
 
 
 class LogEntry(MsgpackModel):
@@ -28,6 +28,7 @@ class AppendEntriesRPCRequest(MsgpackModel):
 
 
 class AppendEntriesRPCResponse(MsgpackModel):
+    peer = types.StringType()
     term = types.IntType()
     success = types.BooleanType()
     index = types.IntType()
@@ -45,8 +46,15 @@ class RequestVoteRPCResponse(MsgpackModel):
     success = types.BooleanType()
 
 
+def claim_function(self, data):
+    for model in RaftMessage.content.model_classes:
+        if set(data).issubset(model.fields):
+            return model
+
+
 class RaftMessage(MsgpackModel):
     content = types.PolyModelType([AppendEntriesRPCRequest,
                                    AppendEntriesRPCResponse,
                                    RequestVoteRPCRequest,
-                                   RequestVoteRPCRequest])
+                                   RequestVoteRPCRequest],
+                                   claim_function=claim_function)

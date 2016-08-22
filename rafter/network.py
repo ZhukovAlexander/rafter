@@ -37,16 +37,17 @@ class UDPProtocolProtobufServer:
         self.transport = transport
 
     def datagram_received(self, data, addr):
-        print('Received data: %s from %s'.format(data, addr))
-        content = RaftMessage.unpack(data).content
-        handler = HANDELERS[type(content)]
-        result = self.server.handle(handler[0], **content.to_native())
+        content = models.RaftMessage.unpack(data).content
+        logger.info('Received data: %s from %s', content.to_native(), addr)
+        handler, resp_class = HANDELERS[type(content)]
+        result = self.server.handle(handler, **content.to_native())
 
         if isinstance(content, (models.AppendEntriesRPCRequest, models.RequestVoteRPCRequest)):
-            self.transport.sendto(handler[1](result).pack(), addr)
+            logger.debug('Sending %s to %s', result, addr)
+            self.transport.sendto(models.RaftMessage({'content': resp_class(result)}).pack(), addr)
 
     def connection_lost(self, exc):
-        print('Closing server transport at {}:{}'.format(*self.transport.get_extra_info('sockname')))
+        logger.info('Closing server transport at {}:{}'.format(*self.transport.get_extra_info('sockname')))
 
 
 class UDPProtocolProtobufClient:
@@ -61,13 +62,17 @@ class UDPProtocolProtobufClient:
 
         asyncio.ensure_future(self.start())
 
+    def datagram_received(self, data, addr):
+        pass
+
     async def start(self):
         while not self.transport.is_closing():
             data, dest = await self.queue.get()
-            self.transport.send_to(data.pack(), dest)
+            logger.debug('Sending %s to %s', data.to_native(), dest)
+            self.transport.sendto(models.RaftMessage({'content': data}).pack(), dest)
 
     def connection_lost(self, exc):
-        print('Closing client transport at {}:{}'.format(*self.transport.get_extra_info('sockname')))
+        logger.info('Closing client transport at {}:{}'.format(*self.transport.get_extra_info('sockname')))
 
 
 class ResetablePeriodicTask:

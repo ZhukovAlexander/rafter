@@ -1,9 +1,15 @@
 from abc import ABCMeta, abstractmethod
 import asyncio
 import json
+import logging
 
 import aiohttp
 import aiohttp.server
+
+from .exceptions import NotLeaderException
+
+logger = logging.getLogger(__name__)
+
 
 class UnboundExposedCommand(Exception):
     """Raised when the command is not bound to a service instance"""
@@ -34,7 +40,7 @@ class ExposedCommand:
         if self._write:
             # wait, until it's safe to apply the command
             await self._service.can_handle(self.slug, args, kwargs)
-        return await self._func(self._service, *args, **kwargs)
+        return self._func(self._service, *args, **kwargs)
 
 
 def _exposed(write=True, slug=None):
@@ -65,7 +71,11 @@ class BaseService(metaclass=ServiceMeta):
         self._server = server
 
     async def can_handle(self, slug, *args, **kwargs):
-        return await self._server.handle_write_command(slug, args, kwargs)
+        try:
+            return await self._server.handle_write_command(slug, args, kwargs)
+        except NotLeaderException as e:
+            logger.error('Access server that is not a leader')
+            raise
 
     async def dispatch(self, cmd, *args, **kwargs):
         try:
@@ -87,6 +97,7 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+NOT_A_LEADER = -32000
 
 VERSION = '2.0'
 
@@ -100,7 +111,7 @@ def is_valid_request(data):
 
 
 def encode(data):
-    return json.dumps(data).encode() + b'\n'
+    return json.dumps(data).encode()
 
 
 class JsonRpcHttpRequestHandler(aiohttp.server.ServerHttpProtocol):
@@ -130,9 +141,11 @@ class JsonRpcHttpRequestHandler(aiohttp.server.ServerHttpProtocol):
         try:
             data = json.loads((await payload.read()).decode())
         except ValueError as e:
-            rpc_response.error = dict(code=PARSE_ERROR, message='Invalid JSON')
+            rpc_response['error'] = dict(code=PARSE_ERROR, message='Invalid JSON')
             http_response.write(encode(rpc_response))
             return await http_response.write_eof()
+
+        rpc_response['id'] = data.get('id', None)
 
         if not is_valid_request(data):
             rpc_response['error'] = dict(code=INVALID_REQUEST, message='Invalid JSON-RPC Request object')
@@ -148,10 +161,12 @@ class JsonRpcHttpRequestHandler(aiohttp.server.ServerHttpProtocol):
 
         except UnknownCommand as e:
             rpc_response['error'] = dict(code=METHOD_NOT_FOUND, message=str(e))
+        except NotLeaderException as e:
+            rpc_response['error'] = dict(code=NOT_A_LEADER, message=str(e))
         except Exception as e:
             rpc_response['error'] = dict(code=INTERNAL_ERROR, message=str(e))
+            logger.exception('Internal error')
 
-        http_response.write(encode(rpc_response))
         await http_response.write_eof()
 
 
@@ -162,25 +177,17 @@ class JsonRPCService(BaseService):
             lambda: JsonRpcHttpRequestHandler(self, debug=True, keep_alive=75),
             '0.0.0.0', '8080')
         srv = loop.run_until_complete(f)
-        print('serving on', srv.sockets[0].getsockname())
+        logger.info('Started serving a JSON-RPC on %s', srv.sockets[0].getsockname())
 
     @exposed
     def foo(self, a, b):
         return a + b
 
 
-class Example(BaseService):
-
-    @exposed
-    async def foo(self):
-        return 1
-
-    @exposed(slug='bar-slug')
-    async def bar(self):
-        return 'baz'
-
-
 from .server import RaftServer
 # asyncio.get_event_loop().run_until_complete(JsonRPCService(None).setup())
-JsonRPCService(RaftServer()).setup()
+server = RaftServer()
+JsonRPCService(server).setup()
+server.start()
+
 asyncio.get_event_loop().run_forever()

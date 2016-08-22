@@ -16,7 +16,7 @@ TERM = b'term'
 
 # TODO: implement dynamic serizlizer
 class RaftLog(collections.abc.MutableSequence):
-    """This class implements raft log on top of the LMDB storage"""
+    """Implement raft log on top of the LMDB storage."""
 
     def __init__(self, env=None, db=None):
 
@@ -64,7 +64,8 @@ class RaftLog(collections.abc.MutableSequence):
         self[index] = value
 
     def append(self, value):
-        value.index = len(self)
+        if value.index != len(self):
+            raise IndexError('Can\'t append: value.index:{0} != len(self):{1}'.format(value.index, len(self)))
         with self.txn(write=True) as txn:
             txn.put(u(value.index), value.pack(), append=True)
 
@@ -77,7 +78,7 @@ class RaftLog(collections.abc.MutableSequence):
         return last_log_term > last.term or last_log_term == last.term and last.index <= last_log_index
 
     def entry(self, command):
-        self.append(LogEntry(dict(term=self.term, command=command)))
+        self.append(LogEntry(dict(index=len(self), term=self.term, command=command)))
         return self[-1]
 
     @property
@@ -88,8 +89,8 @@ class RaftLog(collections.abc.MutableSequence):
     @commit_index.setter
     # <http://stackoverflow.com/a/4183512/2183102>
     def commit_index(self, value):
-        with self.txn(db=self.metadata_db) as txn:
-            txn.replace(COMMIT_INDEX, value)
+        with self.txn(db=self.metadata_db, write=True) as txn:
+            txn.replace(COMMIT_INDEX, u(value))
 
     @property
     def term(self):
