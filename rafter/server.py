@@ -190,4 +190,3 @@ class RaftServer:
 
     def election(self):
         self.state.start_election()
-

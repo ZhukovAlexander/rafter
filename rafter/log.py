@@ -1,3 +1,4 @@
+import sys
 import collections
 import itertools
 
@@ -6,8 +7,12 @@ import lmdb
 from .models import LogEntry
 
 
-def u(n):
-    return str(n).encode()
+def to_bytes(i):
+    return i.to_bytes(8, sys.byteorder)
+
+
+def from_bytes(b):
+    return int.from_bytes(b, sys.byteorder)
 
 
 COMMIT_INDEX = b'commit_index'
@@ -31,15 +36,15 @@ class RaftLog(collections.abc.MutableSequence):
         if index > len(self):
             raise IndexError
         with self.txn(write=True) as txn:
-            txn.replace(u(index), value.pack())
+            txn.replace(to_bytes(index), value.pack())
 
     def __delitem__(self, index):
         with self.txn(write=True) as txn:
             if isinstance(index, int):
-                txn.delete(str(index).encode())
+                txn.delete(to_bytes(index).encode())
             elif isinstance(index, slice):
                 curr = txn.cursor()
-                curr.set_key(u(index.start))
+                curr.set_key(to_bytes(index.start))
                 succ = True
                 while succ:
                     succ = curr.delete()
@@ -52,13 +57,17 @@ class RaftLog(collections.abc.MutableSequence):
     def __getitem__(self, index):
         with self.txn() as txn:
             if isinstance(index, int):
-                return LogEntry.unpack(txn.get(str(len(self) + index if index < 0 else index).encode()))
+                if index >= len(self):
+                    raise IndexError('log index out of range')
+                return LogEntry.unpack(txn.get(to_bytes(len(self) + index if index < 0 else index)))
 
             elif isinstance(index, slice):
                 cur = txn.cursor()
-                cur.set_key(u(index.start or 0))
+                cur.set_key(to_bytes(index.start or 0))
                 return [LogEntry.unpack(item[1]) for item in
-                        itertools.takewhile(lambda item: int(item[0]) <= index.stop if index.stop else True, cur)]
+                        itertools.takewhile(lambda item: from_bytes(item[0]) <= index.stop if index.stop else True, cur)]
+            else:
+                raise TypeError('log indices must be integers or slices, not {}'.format(type(index).__name__))
 
     def insert(self, index, value):
         self[index] = value
@@ -67,11 +76,11 @@ class RaftLog(collections.abc.MutableSequence):
         if value.index != len(self):
             raise IndexError('Can\'t append: value.index:{0} != len(self):{1}'.format(value.index, len(self)))
         with self.txn(write=True) as txn:
-            txn.put(u(value.index), value.pack(), append=True)
+            txn.put(to_bytes(value.index), value.pack(), append=True)
 
     def extend(self, l):
         with self.txn() as txn:
-            return txn.cursor().putmulti([(u(e.index), e.pack()) for e in l], append=True)
+            return txn.cursor().putmulti([(to_bytes(e.index), e.pack()) for e in l], append=True)
 
     def cmp(self, last_log_index, last_log_term):
         last = self[-1]
