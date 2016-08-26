@@ -21,25 +21,28 @@ class UnknownCommand(Exception):
 
 class ExposedCommand:
 
+    _server = None
     _service = None
 
     def __init__(self, func, write=True, slug=None):
         self._func = func
         self._write = write
-        self.slug = slug or func.__qualname__
+        self.slug = func.__name__
 
     def __get__(self, instance, owner):
-        self._service = instance
         if instance:
-            return instance.exposed[self.slug]
+            self._service = instance
+            self._server = instance._server
         return self
 
     async def __call__(self, *args, **kwargs):
         if not self._service:
             raise UnboundExposedCommand()
         if self._write:
-            # wait, until it's safe to apply the command
-            await self._service.can_handle(self.slug, args, kwargs)
+            return await self._server.handle_write_command(self.slug, *args, **kwargs)
+        return self._server.handle_read_command(self._func, *args, **kwargs)
+
+    def apply(self, *args, **kwargs):
         return self._func(self._service, *args, **kwargs)
 
 
@@ -122,7 +125,7 @@ class JsonRpcHttpRequestHandler(aiohttp.server.ServerHttpProtocol):
 
     async def handle_request(self, message, payload):
 
-        if not message.path == '/jsonrpc/method/':
+        if message.path != '/jsonrpc/method/':
             # return 404
             return await super().handle_request(message, payload)
 
@@ -181,13 +184,15 @@ class JsonRPCService(BaseService):
 
     @exposed
     def foo(self, a, b):
+        logger.debug('Result of {0} + {1} is {2}'.format(a, b, a + b))
         return a + b
 
 
 from .server import RaftServer
 # asyncio.get_event_loop().run_until_complete(JsonRPCService(None).setup())
-server = RaftServer()
-JsonRPCService(server).setup()
+server = RaftServer(JsonRPCService)
+# sv = JsonRPCService(server)
+# JsonRPCService(server).setup()
 server.start()
 
 asyncio.get_event_loop().run_forever()

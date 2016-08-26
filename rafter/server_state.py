@@ -43,7 +43,7 @@ class StateBase:
     def to_leader(self):
         self._server.state = Leader(self._server, self.log)
         self._server.election_timer.stop()
-        logger.debug('Switched to Leader with term {}'.format(self.current_term))
+        logger.debug('Switched to Leader with term {}'.format(self.log.term))
 
     def to_candidate(self):
         self._server.state = Candidate(self._server, self.log)
@@ -51,17 +51,9 @@ class StateBase:
     def is_leader(self):
         return type(self) is Leader
 
-    @property
-    def current_term(self):
-        return self.log.term
-
-    @property
-    def commit_index(self):
-        return self.log.commit_index
-
     def append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
-        if term < self.current_term:
-            return dict(peer=self._server.id, index=self.log.commit_index, term=self.current_term, success=False)
+        if term < self.log.term:
+            return dict(peer=self._server.id, index=self.log.commit_index, term=self.log.term, success=False)
         return self._append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
     def request_vote(self, term, cid, last_log_index, last_log_term):
@@ -96,7 +88,7 @@ class Leader(StateBase):
         return dict(term=self.current_term, success=True)
 
     def append_entries_response(self, peer, term, index, success):
-        if self.current_term == term:
+        if self.log.term == term:  # maybe this is not needed?
             logger.debug('self.current_term == term:')
             self._server.maybe_commit(peer, term, index) if success else self._server.retry_ae(peer, term, index)
 

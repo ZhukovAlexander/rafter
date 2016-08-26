@@ -66,7 +66,7 @@ class Peers(dict):
 '192.168.0.102'
 class RaftServer:
 
-    def __init__(self, address=('0.0.0.0', 10000),
+    def __init__(self, service, address=('0.0.0.0', 10000),
                  log=None, loop=None, server_protocol=UDPProtocolProtobufServer,
                  client_protocol=UDPProtocolProtobufClient, config=None):
         self.host, self.port = address
@@ -86,6 +86,7 @@ class RaftServer:
         self.state = server_state.Follower(self, self.log)
         self.server_protocol = server_protocol(self)
         self.client_protocol = client_protocol(self, self.queue, self.loop)
+        self.service = service(self)
 
         def election():
             self.state.election()
@@ -116,6 +117,7 @@ class RaftServer:
         )
 
         self.election_timer.start(random.randint(15, 30) / 100)
+        self.service.setup()
 
         # self.loop.run_forever()
 
@@ -132,6 +134,8 @@ class RaftServer:
     async def _apply_single(self, entry):
 
         # notify waiting client
+        getattr(self.service, entry.command).apply(*entry.args, **entry.kwargs)
+
         can_apply = self.pending_events.get(entry.index)
         if can_apply:
             can_apply.set()
@@ -163,13 +167,15 @@ class RaftServer:
         if not self.state.is_leader():
             raise NotLeaderException('This server is not a leader')
         logger.debug('handle_write_command')
+        logger.debug(args)
         # <http://stackoverflow.com/a/17307606/2183102>
-        log_entry = self.log.entry(command=pickle.dumps((slug, args, kwargs)).decode('latin1'))
+        log_entry = self.log.entry(command=slug, args=args, kwargs=kwargs)
 
-        can_apply = asyncio.Event()
-        self.pending_events[log_entry.index] = can_apply
+        command_applied = asyncio.Event()
+        self.pending_events[log_entry.index] = command_applied
         await self.send_append_entries([log_entry])
-        await can_apply.wait()
+        await command_applied.wait()
+        return True
 
     async def send_append_entries(self, entries, destination=('239.255.255.250', 10000)):
         prev = self.log[entries[0].index - 1] if entries else self.log.index - 1
