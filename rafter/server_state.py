@@ -113,10 +113,15 @@ class Candidate(StateBase):
     def _request_vote(self, term, cid, last_log_index, last_log_term):
         return dict(term=self.current_term, success=False)
 
+    def request_vote_response(self, peer, term, success):
+        pass
+
+
 
 class Follower(StateBase):
 
     def _append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
+        # apply to local
         try:
             prev_log_entry = self.log[prev_log_index]
         except IndexError:

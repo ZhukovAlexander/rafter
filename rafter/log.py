@@ -18,6 +18,22 @@ def from_bytes(b):
 COMMIT_INDEX = b'commit_index'
 TERM = b'term'
 
+class MetaDataField:
+    def __init__(self, key, encode=lambda x: x, default=None):
+        self._key = key
+        self._default = default
+        self._encode = encode
+
+    def __get__(self, instance, owner):
+        if instance:
+            with instance.txn(db=instance.metadata_db) as txn:
+                return self._encode(txn.get(self._key, default=self._default))
+
+    def __set__(self, instance, value):
+        if instance:
+            with instance.txn(write=True, db=instance.metadata_db) as txn:
+                txn.replace(self._key, str(value).encode())
+
 
 # TODO: implement dynamic serizlizer
 class RaftLog(collections.abc.MutableSequence):
@@ -90,23 +106,7 @@ class RaftLog(collections.abc.MutableSequence):
         self.append(LogEntry(dict(index=len(self), term=self.term, command=command)))
         return self[-1]
 
-    @property
-    def commit_index(self):
-        with self.txn(db=self.metadata_db) as txn:
-            return int(txn.get(COMMIT_INDEX, default=b'0'))
-
-    @commit_index.setter
-    # <http://stackoverflow.com/a/4183512/2183102>
-    def commit_index(self, value):
-        with self.txn(db=self.metadata_db, write=True) as txn:
-            txn.replace(COMMIT_INDEX, u(value))
-
-    @property
-    def term(self):
-        with self.txn(db=self.metadata_db) as txn:
-            return int(txn.get(TERM, default=b'0'))
-
-    @term.setter
-    def term(self, value):
-        with self.txn(write=True, db=self.metadata_db) as txn:
-            txn.replace(TERM, u(value))
+    # I'm not really sure, if this data belongs here
+    term = MetaDataField(b'term', encode=int, default=b'0')
+    commit_index = MetaDataField(b'commit_index', encode=int, default=b'0')
+    voted_for = MetaDataField(b'voted_for', encode=lambda x: x.decode(), default=b'')
