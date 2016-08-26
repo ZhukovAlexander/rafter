@@ -12,10 +12,21 @@ class MsgpackModel(models.Model):
         return cls({k: value for k, value in msgpack.unpackb(bytes, encoding='utf-8').items()})
 
 
+class ArgsType(types.BaseType):
+    """"""
+
+
+class KwargsType(types.BaseType):
+
+    """"""
+
+
 class LogEntry(MsgpackModel):
     index = types.IntType()
     term = types.IntType()
     command = types.StringType()
+    args = ArgsType()
+    kwargs = KwargsType()
 
 
 class AppendEntriesRPCRequest(MsgpackModel):

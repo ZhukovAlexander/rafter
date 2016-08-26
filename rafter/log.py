@@ -102,8 +102,8 @@ class RaftLog(collections.abc.MutableSequence):
         last = self[-1]
         return last_log_term > last.term or last_log_term == last.term and last.index <= last_log_index
 
-    def entry(self, command):
-        self.append(LogEntry(dict(index=len(self), term=self.term, command=command)))
+    def entry(self, command, args, kwargs):
+        self.append(LogEntry(dict(index=len(self), term=self.term, command=command, args=args, kwargs=kwargs)))
         return self[-1]
 
     # I'm not really sure, if this data belongs here
