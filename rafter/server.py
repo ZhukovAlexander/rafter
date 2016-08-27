@@ -179,20 +179,30 @@ class RaftServer:
 
     async def send_append_entries(self, entries, destination=('239.255.255.250', 10000)):
         prev = self.log[entries[0].index - 1] if entries else self.log.index - 1
-        message = models.AppendEntriesRPCRequest(
-            dict(term=self.log.term,
-                 leader_id=self.id,
-                 prev_log_index=prev.index,
-                 prev_log_term=prev.term,
-                 leader_commit=self.log.commit_index,
-                 entries=entries)
-        )
+        message = dict(
+            term=self.log.term,
+            leader_id=self.id,
+            prev_log_index=prev.index,
+            prev_log_term=prev.term,
+            leader_commit=self.log.commit_index,
+            entries=entries)
 
         await self.queue.put((message, destination))
 
     def retry_ae(self, peer, term, index):
         entry = self.log[index]
         asyncio.ensure_future(self.send_append_entries([entry], destination=peer))
+
+    def broadcast_request_vote(self):
+        last = self.log[-1]
+        message = dict(
+            term=self.log.term,
+            peer=self.id,
+            last_log_index=last.index,
+            last_log_term=last.term
+        )
+
+        asyncio.ensure_future(self.queue.put((message, ('239.255.255.250', 10000))))
 
     def election(self):
         self.state.start_election()

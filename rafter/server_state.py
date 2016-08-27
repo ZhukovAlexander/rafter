@@ -31,6 +31,7 @@ class StateBase:
     """
 
     def __init__(self, server, log):
+        self._votes = set()
         self.voted_for = None
         self._server = server
         self.log = log
@@ -56,23 +57,23 @@ class StateBase:
             return dict(peer=self._server.id, index=self.log.commit_index, term=self.log.term, success=False)
         return self._append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
-    def request_vote(self, term, cid, last_log_index, last_log_term):
-        if not term < self.current_term:
-            return dict(term=self.current_term, success=False)
-        return self._request_vote(term, cid, last_log_index, last_log_term)
+    def request_vote(self, term, peer, last_log_index, last_log_term):
+        if term < self.log.term:
+            return dict(term=self.log.term, vote=False)
+        return self._request_vote(term, peer, last_log_index, last_log_term)
 
     def append_entries_response(self, peer, term, index, success):
         pass
 
-    def requtest_vote_response(self, peer, term, success):
+    def request_vote_response(self, term, vote, peer):
         pass
 
     def election(self):
+        logger.debug('Starting new election for term {}'.format(self.log.term + 1))
         self.log.term += 1
-        logger.debug('Starting new election for term {}'.format(self.log.term))
+        self._votes.clear()
         self.to_candidate()
-        if self._server.id in self._server.peers and len(self._server.peers) == 1 or 1:
-            self.to_leader()
+        self._server.broadcast_request_vote()
 
 
 class Leader(StateBase):
@@ -83,9 +84,11 @@ class Leader(StateBase):
         self.to_follower(term)
         return self._server.state.append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
-    def _request_vote(self, term, cid, last_log_index, last_log_term):
+    def _request_vote(self, term, peer, last_log_index, last_log_term):
+        if peer == self._server.id:
+            return dict(term=self.log.term, vote=True, peer=self._server.id)
         self.to_follower(term)
-        return dict(term=self.current_term, success=True)
+        return dict(term=self.log.term, vote=True, peer=self._server.id)
 
     def append_entries_response(self, peer, term, index, success):
         if self.log.term == term:  # maybe this is not needed?
@@ -102,11 +105,17 @@ class Candidate(StateBase):
         self.to_follower(term)
         return self._server.state.append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
-    def _request_vote(self, term, cid, last_log_index, last_log_term):
-        return dict(term=self.current_term, success=False)
+    def _request_vote(self, term, peer, last_log_index, last_log_term):
+        logger.debug(self._server.id)
+        if peer == self._server.id:
+            return dict(term=self.log.term, vote=True, peer=self._server.id)
+        return dict(term=self.log.term, vote=False, peer=self._server.id)
 
-    def request_vote_response(self, peer, term, success):
-        pass
+    def request_vote_response(self, term, vote, peer):
+        if vote:
+            self._votes.add(peer)
+            if len(self._votes.intersection(self._server.peers)) >= len(self._server.peers) // 2 + 1:
+                self.to_leader()
 
 
 
@@ -125,11 +134,11 @@ class Follower(StateBase):
             self.commit_index = min(leader_commit, self.commit_index)
         return dict(index=prev_log_index, term=self.current_term, success=True)
 
-    def _request_vote(self, term, cid, last_log_index, last_log_term):
-        if self._server.voted_for in (None, cid) and self.log.cmp(last_log_index, last_log_term):
-            self.voted_for = cid
-            return dict(term=self.current_term, success=True)
-        return dict(term=self.current_term, success=False)
+    def _request_vote(self, term, peer, last_log_index, last_log_term):
+        if self.log.voted_for in ('', peer) and self.log.cmp(last_log_index, last_log_term):
+            self.log.voted_for = peer
+            return dict(term=self.log.term, vote=True, peer=self._server.id)
+        return dict(term=self.log.term, vote=False, peer=self._server.id)
 
 TRANSITIONS = {
     'Leader': ('Follower', ),

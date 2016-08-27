@@ -47,14 +47,15 @@ class AppendEntriesRPCResponse(MsgpackModel):
 
 class RequestVoteRPCRequest(MsgpackModel):
     term = types.IntType()
-    candidate_id = types.StringType()
+    peer = types.StringType()
     last_log_index = types.IntType()
     last_log_term = types.IntType()
 
 
 class RequestVoteRPCResponse(MsgpackModel):
     term = types.IntType()
-    success = types.BooleanType()
+    vote = types.BooleanType()
+    peer = types.StringType()
 
 
 def claim_function(self, data):
@@ -67,5 +68,5 @@ class RaftMessage(MsgpackModel):
     content = types.PolyModelType([AppendEntriesRPCRequest,
                                    AppendEntriesRPCResponse,
                                    RequestVoteRPCRequest,
-                                   RequestVoteRPCRequest],
+                                   RequestVoteRPCResponse],
                                    claim_function=claim_function)

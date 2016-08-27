@@ -5,7 +5,7 @@ import logging
 
 from . import models
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 HANDELERS = {
     models.AppendEntriesRPCRequest: ('append_entries', models.AppendEntriesRPCResponse),
@@ -44,7 +44,7 @@ class UDPProtocolProtobufServer:
 
         if isinstance(content, (models.AppendEntriesRPCRequest, models.RequestVoteRPCRequest)):
             logger.debug('Sending %s to %s', result, addr)
-            self.transport.sendto(models.RaftMessage({'content': resp_class(result)}).pack(), addr)
+            self.transport.sendto(models.RaftMessage({'content': result}).pack(), addr)
 
     def connection_lost(self, exc):
         logger.info('Closing server transport at {}:{}'.format(*self.transport.get_extra_info('sockname')))
@@ -68,7 +68,7 @@ class UDPProtocolProtobufClient:
     async def start(self):
         while not self.transport.is_closing():
             data, dest = await self.queue.get()
-            logger.debug('Sending %s to %s', data.to_native(), dest)
+            logger.debug('Sending %s to %s', data, dest)
             self.transport.sendto(models.RaftMessage({'content': data}).pack(), dest)
 
     def connection_lost(self, exc):

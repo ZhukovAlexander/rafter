@@ -56,7 +56,6 @@ def exposed(*args, **kwargs):
     if len(args) == 1 and callable(args[0]):
         return _exposed()(args[0])
     return _exposed(*args, **kwargs)
-# double descriptor
 
 
 class ServiceMeta(ABCMeta):
