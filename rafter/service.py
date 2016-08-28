@@ -40,10 +40,11 @@ class ExposedCommand:
             raise UnboundExposedCommand()
         if self._write:
             return await self._server.handle_write_command(self.slug, *args, **kwargs)
-        return self._server.handle_read_command(self._func, *args, **kwargs)
+        return await self._server.handle_read_command(self.slug, *args, **kwargs)
 
-    def apply(self, *args, **kwargs):
-        return self._func(self._service, *args, **kwargs)
+    async def apply(self, *args, **kwargs):
+        result = self._func(self._service, *args, **kwargs)
+        return await result if asyncio.iscoroutine(result) else result
 
 
 def _exposed(write=True, slug=None):
@@ -184,7 +185,13 @@ class JsonRPCService(BaseService):
     @exposed
     def foo(self, a, b):
         logger.debug('Result of {0} + {1} is {2}'.format(a, b, a + b))
+        self.res = a + b
         return a + b
+
+    @exposed(write=False)
+    async def bar(self, c, d):
+        logger.debug('c + d = {0}'.format(c + d))
+        return self.res
 
 
 from .server import RaftServer

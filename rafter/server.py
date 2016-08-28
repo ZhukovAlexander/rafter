@@ -63,7 +63,7 @@ class Peers(dict):
         self.pop(peer_id)
         self.dump()
 
-'192.168.0.102'
+
 class RaftServer:
 
     def __init__(self, service, address=('0.0.0.0', 10000),
@@ -131,18 +131,24 @@ class RaftServer:
         """Dispatch to the appropriate state method"""
         return getattr(self.state, message_type)(**kwargs)
 
-    async def _apply_single(self, entry):
+    async def _apply_single(self, cmd, args, kwargs, index=None):
+
+        res = await getattr(self.service, cmd).apply(*args, **kwargs)
+
+        if not index:
+            return res
 
         # notify waiting client
-        getattr(self.service, entry.command).apply(*entry.args, **entry.kwargs)
-
-        can_apply = self.pending_events.get(entry.index)
+        can_apply = self.pending_events.get(index)
         if can_apply:
             can_apply.set()
 
     def apply_commited(self, start, end):
         asyncio.ensure_future(asyncio.wait(map(
-            lambda entry: asyncio.ensure_future(self._apply_single(entry)),
+            lambda entry: asyncio.ensure_future(self._apply_single(entry.command,
+                                                                   entry.args,
+                                                                   entry.kwargs,
+                                                                   index=entry.index)),
             self.log[start:end + 1]
         )))
 
@@ -158,6 +164,7 @@ class RaftServer:
         current_commit_index = self.log.commit_index
         commited_term = self.log[majority_index].term
 
+        # per Raft spec, commit only entries from the current term
         if self.log.term == commited_term:
             new_commit_index = max(current_commit_index, majority_index)
             self.log.commit_index = new_commit_index
@@ -167,7 +174,6 @@ class RaftServer:
         if not self.state.is_leader():
             raise NotLeaderException('This server is not a leader')
         logger.debug('handle_write_command')
-        logger.debug(args)
         # <http://stackoverflow.com/a/17307606/2183102>
         log_entry = self.log.entry(command=slug, args=args, kwargs=kwargs)
 
@@ -176,6 +182,10 @@ class RaftServer:
         await self.send_append_entries([log_entry])
         await command_applied.wait()
         return True
+
+    async def handle_read_command(self, command, *args, **kwargs):
+        return await self._apply_single(command, args, kwargs)
+
 
     async def send_append_entries(self, entries, destination=('239.255.255.250', 10000)):
         prev = self.log[entries[0].index - 1] if entries else self.log.index - 1

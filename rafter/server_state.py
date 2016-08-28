@@ -40,7 +40,6 @@ class StateBase:
         self._server.state = Follower(self._sever, self.log)
         self._server.term = term
 
-    # @_transition('Leader')
     def to_leader(self):
         self._server.state = Leader(self._server, self.log)
         self._server.election_timer.stop()
@@ -70,9 +69,9 @@ class StateBase:
 
     def election(self):
         logger.debug('Starting new election for term {}'.format(self.log.term + 1))
+        self.to_candidate()
         self.log.term += 1
         self._votes.clear()
-        self.to_candidate()
         self._server.broadcast_request_vote()
 
 
