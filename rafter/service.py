@@ -84,10 +84,10 @@ class BaseService(metaclass=ServiceMeta):
         try:
             command = getattr(self, cmd)
         except AttributeError:
-            raise UnknownCommand
+            raise UnknownCommand('Command not found')
         else:
             if not isinstance(command, ExposedCommand):
-                raise UnknownCommand
+                raise UnknownCommand('Command not found')
         return await command(*args, **kwargs)
 
     @abstractmethod
