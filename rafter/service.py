@@ -169,8 +169,9 @@ class JsonRpcHttpRequestHandler(aiohttp.server.ServerHttpProtocol):
         except Exception as e:
             rpc_response['error'] = dict(code=INTERNAL_ERROR, message=str(e))
             logger.exception('Internal error')
-
-        await http_response.write_eof()
+        finally:
+            http_response.write(encode(rpc_response))
+            await http_response.write_eof()
 
 
 class JsonRPCService(BaseService):
