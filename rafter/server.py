@@ -66,9 +66,15 @@ class Peers(dict):
 
 class RaftServer:
 
-    def __init__(self, service, address=('0.0.0.0', 10000),
-                 log=None, loop=None, server_protocol=UDPProtocolProtobufServer,
-                 client_protocol=UDPProtocolProtobufClient, config=None):
+    def __init__(self,
+                 service,
+                 address=('0.0.0.0', 10000),
+                 log=None,
+                 loop=None,
+                 server_protocol=UDPProtocolProtobufServer,
+                 client_protocol=UDPProtocolProtobufClient,
+                 config=None):
+
         self.host, self.port = address
 
         self.id = '{0}:{1}'.format('192.168.0.102', self.port)
@@ -119,9 +125,7 @@ class RaftServer:
         self.election_timer.start(random.randint(15, 30) / 100)
         self.service.setup()
 
-        # self.loop.run_forever()
-
-    async def stop(self, signame):
+    def stop(self, signame):
         logger.info('Got signal {}, exiting...'.format(signame))
         self.server_transport.close()
         self.client_transport.close()
@@ -133,7 +137,11 @@ class RaftServer:
 
     async def _apply_single(self, cmd, args, kwargs, index=None):
 
-        res = await getattr(self.service, cmd).apply(*args, **kwargs)
+        try:
+            res = await getattr(self.service, cmd).apply(*args, **kwargs)
+        except Exception as e:
+            logger.exception('Exception during command invocation')
+            raise
 
         if not index:
             return res
@@ -184,8 +192,9 @@ class RaftServer:
         return True
 
     async def handle_read_command(self, command, *args, **kwargs):
+        if not self.state.is_leader():
+            raise NotLeaderException('This server is not a leader')
         return await self._apply_single(command, args, kwargs)
-
 
     async def send_append_entries(self, entries, destination=('239.255.255.250', 10000)):
         prev = self.log[entries[0].index - 1] if entries else self.log.index - 1
@@ -216,3 +225,12 @@ class RaftServer:
 
     def election(self):
         self.state.start_election()
+
+    def add_peer(self, peer):
+        self.peers.add(peer)
+
+    def remove_peer(self, peer_id):
+        self.peers.remove(peer_id)
+
+    def list_peers(self):
+        return list(self.peers)

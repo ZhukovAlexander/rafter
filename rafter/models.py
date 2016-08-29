@@ -69,4 +69,4 @@ class RaftMessage(MsgpackModel):
                                    AppendEntriesRPCResponse,
                                    RequestVoteRPCRequest,
                                    RequestVoteRPCResponse],
-                                   claim_function=claim_function)
+                                  claim_function=claim_function)

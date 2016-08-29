@@ -1,27 +1,6 @@
-import functools
 import logging
 
 logger = logging.getLogger(__name__)
-
-def check_term(func):
-    async def new(*args, **kwargs):
-        current_term = locals()['self'].current_term
-
-        if not locals()['term'] < current_term:
-            return current_term, False
-        return await func(*args, **kwargs)
-
-
-def _transition(target_state):
-    def decorator(method):
-        @functools.wraps(method)
-        def transition(*args, **kwargs):
-            self = args[0]
-            if target_state in TRANSITIONS[type(self).__name__]:
-                self._server.state = STATES[target_state](self._server)
-                method(*args, **kwargs)
-        return transition
-    return decorator
 
 
 # <https://github.com/faif/python-patterns/blob/master/state.py>
@@ -117,7 +96,6 @@ class Candidate(StateBase):
                 self.to_leader()
 
 
-
 class Follower(StateBase):
 
     def _append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
@@ -138,17 +116,5 @@ class Follower(StateBase):
             self.log.voted_for = peer
             return dict(term=self.log.term, vote=True, peer=self._server.id)
         return dict(term=self.log.term, vote=False, peer=self._server.id)
-
-TRANSITIONS = {
-    'Leader': ('Follower', ),
-    'Follower': ('Candidate', 'Follower'),
-    'Candidate': ('Follower', 'Candidate', 'Leader')
-}
-
-STATES = {
-    'Leader': Leader,
-    'Follower': Follower,
-    'Candidate': Candidate
-}
 
 # function database

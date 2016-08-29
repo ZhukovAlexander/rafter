@@ -6,17 +6,9 @@ import logging
 import aiohttp
 import aiohttp.server
 
-from .exceptions import NotLeaderException
+from .exceptions import NotLeaderException, UnknownCommand, UnboundExposedCommand
 
 logger = logging.getLogger(__name__)
-
-
-class UnboundExposedCommand(Exception):
-    """Raised when the command is not bound to a service instance"""
-
-
-class UnknownCommand(Exception):
-    """Raised when someont tries to invoka an unknown command"""
 
 
 class ExposedCommand:
@@ -84,15 +76,27 @@ class BaseService(metaclass=ServiceMeta):
         try:
             command = getattr(self, cmd)
         except AttributeError:
-            raise UnknownCommand('Command not found')
+            raise UnknownCommand('Command not found: {0}'.format(cmd))
         else:
             if not isinstance(command, ExposedCommand):
-                raise UnknownCommand('Command not found')
+                raise UnknownCommand('Command not found: {0}'.format(cmd))
         return await command(*args, **kwargs)
 
     @abstractmethod
     async def setup(self):
         raise NotImplementedError
+
+    @exposed(write=False)
+    def peers(self):
+        return self._server.list_peers()
+
+    @exposed
+    def add_peer(self, peer):
+        self._server.add_peer(peer)
+
+    @exposed
+    def remove_peer(self, peer_id):
+        self._server.remove_peer(peer_id)
 
 
 PARSE_ERROR = -32700
@@ -160,7 +164,6 @@ class JsonRpcHttpRequestHandler(aiohttp.server.ServerHttpProtocol):
                 if isinstance(params, (list, tuple)) \
                 else self._service.dispatch(data['method'], **params)
             rpc_response['result'] = result
-            http_response.write(encode(rpc_response))
 
         except UnknownCommand as e:
             rpc_response['error'] = dict(code=METHOD_NOT_FOUND, message=str(e))
@@ -189,17 +192,9 @@ class JsonRPCService(BaseService):
         self.res = a + b
         return a + b
 
-    @exposed(write=False)
-    async def bar(self, c, d):
-        logger.debug('c + d = {0}'.format(c + d))
-        return self.res
-
 
 from .server import RaftServer
-# asyncio.get_event_loop().run_until_complete(JsonRPCService(None).setup())
 server = RaftServer(JsonRPCService)
-# sv = JsonRPCService(server)
-# JsonRPCService(server).setup()
 server.start()
 
 asyncio.get_event_loop().run_forever()
