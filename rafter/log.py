@@ -25,12 +25,12 @@ class MetaDataField:
         self._encode = encode
 
     def __get__(self, instance, owner):
-        if instance:
+        if instance is not None:
             with instance.txn(db=instance.metadata_db) as txn:
                 return self._encode(txn.get(self._key, default=self._default))
 
     def __set__(self, instance, value):
-        if instance:
+        if instance is not None:
             with instance.txn(write=True, db=instance.metadata_db) as txn:
                 txn.replace(self._key, str(value).encode())
 
@@ -102,8 +102,8 @@ class RaftLog(collections.abc.MutableSequence):
         last = self[-1]
         return last_log_term > last.term or last_log_term == last.term and last.index <= last_log_index
 
-    def entry(self, command, args, kwargs):
-        self.append(LogEntry(dict(index=len(self), term=self.term, command=command, args=args, kwargs=kwargs)))
+    def entry(self, command, args=(), kwargs=None):
+        self.append(LogEntry(dict(index=len(self), term=self.term, command=command, args=args, kwargs=kwargs or {})))
         return self[-1]
 
     # I'm not really sure, if this data belongs here

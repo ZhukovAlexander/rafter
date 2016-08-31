@@ -106,7 +106,7 @@ class RaftServer:
         for signame in ('SIGINT', 'SIGTERM'):
             # <http://stackoverflow.com/questions/23313720/asyncio-how-can-coroutines-be-used-in-signal-handlers>
             self.loop.add_signal_handler(
-                getattr(signal, signame), asyncio.ensure_future, self.stop(signame))
+                getattr(signal, signame), self.stop, signame)
 
         # actually, this is questionable to share the same socket address between to protocols, but for now I wan't to separate
         # client and server logic, and we obviously have to use the same
@@ -138,7 +138,7 @@ class RaftServer:
     async def _apply_single(self, cmd, args, kwargs, index=None):
 
         try:
-            res = await getattr(self.service, cmd).apply(*args, **kwargs)
+            res = await getattr(self.service, cmd).apply(*args, **kwargs) if cmd else None
         except Exception as e:
             logger.exception('Exception during command invocation')
             raise
@@ -213,12 +213,12 @@ class RaftServer:
         asyncio.ensure_future(self.send_append_entries([entry], destination=peer))
 
     def broadcast_request_vote(self):
-        last = self.log[-1]
+        last = self.log[-1] if len(self.log) > 0 else self.log.entry('')
         message = dict(
             term=self.log.term,
             peer=self.id,
-            last_log_index=last.index,
-            last_log_term=last.term
+            last_log_index=last.index if last else 0,
+            last_log_term=last.term if last else 0
         )
 
         asyncio.ensure_future(self.queue.put((message, ('239.255.255.250', 10000))))
