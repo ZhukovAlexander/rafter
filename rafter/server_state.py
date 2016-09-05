@@ -22,7 +22,7 @@ class StateBase:
     def to_leader(self):
         self._server.state = Leader(self._server, self.log)
         self._server.election_timer.stop()
-        logger.debug('Switched to Leader with term {}'.format(self.log.term))
+        logger.debug('Switched to Leader with term {}'.format(self._server.term))
 
     def to_candidate(self):
         self._server.state = Candidate(self._server, self.log)
@@ -31,13 +31,13 @@ class StateBase:
         return type(self) is Leader
 
     def append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
-        if term < self.log.term:
-            return dict(peer=self._server.id, index=self.log.commit_index, term=self.log.term, success=False)
+        if term < self._server.term:
+            return dict(peer=self._server.id, index=self.log.commit_index, term=self._server.term, success=False)
         return self._append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
     def request_vote(self, term, peer, last_log_index, last_log_term):
-        if term < self.log.term:
-            return dict(term=self.log.term, vote=False)
+        if term < self._server.term:
+            return dict(term=self._server.term, vote=False)
         return self._request_vote(term, peer, last_log_index, last_log_term)
 
     def append_entries_response(self, peer, term, index, success):
@@ -47,9 +47,9 @@ class StateBase:
         pass
 
     def election(self):
-        logger.debug('Starting new election for term {}'.format(self.log.term + 1))
+        logger.debug('Starting new election for term {}'.format(self._server.term + 1))
         self.to_candidate()
-        self.log.term += 1
+        self._server.storage.term += 1
         self._votes.clear()
         self._server.broadcast_request_vote()
 
@@ -64,12 +64,12 @@ class Leader(StateBase):
 
     def _request_vote(self, term, peer, last_log_index, last_log_term):
         if peer == self._server.id:
-            return dict(term=self.log.term, vote=True, peer=self._server.id)
+            return dict(term=self._server.term, vote=True, peer=self._server.id)
         self.to_follower(term)
-        return dict(term=self.log.term, vote=True, peer=self._server.id)
+        return dict(term=self._server.term, vote=True, peer=self._server.id)
 
     def append_entries_response(self, peer, term, index, success):
-        if self.log.term == term:  # maybe this is not needed?
+        if self._server.term == term:  # maybe this is not needed?
             logger.debug('self.current_term == term:')
             self._server.maybe_commit(peer, term, index) if success else self._server.retry_ae(peer, term, index)
 
@@ -86,8 +86,8 @@ class Candidate(StateBase):
     def _request_vote(self, term, peer, last_log_index, last_log_term):
         logger.debug(self._server.id)
         if peer == self._server.id:
-            return dict(term=self.log.term, vote=True, peer=self._server.id)
-        return dict(term=self.log.term, vote=False, peer=self._server.id)
+            return dict(term=self._server.term, vote=True, peer=self._server.id)
+        return dict(term=self._server.term, vote=False, peer=self._server.id)
 
     def request_vote_response(self, term, vote, peer):
         if vote:
@@ -114,7 +114,7 @@ class Follower(StateBase):
     def _request_vote(self, term, peer, last_log_index, last_log_term):
         if self.log.voted_for in ('', peer) and self.log.cmp(last_log_index, last_log_term):
             self.log.voted_for = peer
-            return dict(term=self.log.term, vote=True, peer=self._server.id)
-        return dict(term=self.log.term, vote=False, peer=self._server.id)
+            return dict(term=self._server.term, vote=True, peer=self._server.id)
+        return dict(term=self._server.term, vote=False, peer=self._server.id)
 
 # function database

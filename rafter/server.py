@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 asyncio.set_event_loop(uvloop.new_event_loop())
 
-
 class Peers(dict):
     def __init__(self, path='/var/lib/rafter/rafter.peers', *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -70,6 +69,7 @@ class RaftServer:
                  service,
                  address=('0.0.0.0', 10000),
                  log=None,
+                 storage=None,
                  loop=None,
                  server_protocol=UDPProtocolProtobufServer,
                  client_protocol=UDPProtocolProtobufClient,
@@ -79,6 +79,7 @@ class RaftServer:
 
         self.id = '{0}:{1}'.format('192.168.0.102', self.port)
         self.log = log or rlog.RaftLog()
+        self.storage = storage or rlog.Storage()
         self.peers = Peers()
         self.peers[self.id] = {}
         self.match_index = defaultdict(lambda: self.log.commit_index)
@@ -173,7 +174,7 @@ class RaftServer:
         commited_term = self.log[majority_index].term
 
         # per Raft spec, commit only entries from the current term
-        if self.log.term == commited_term:
+        if self.term == commited_term:
             new_commit_index = max(current_commit_index, majority_index)
             self.log.commit_index = new_commit_index
             self.apply_commited(current_commit_index + 1, new_commit_index)
@@ -183,7 +184,7 @@ class RaftServer:
             raise NotLeaderException('This server is not a leader')
         logger.debug('handle_write_command')
         # <http://stackoverflow.com/a/17307606/2183102>
-        log_entry = self.log.entry(command=slug, args=args, kwargs=kwargs)
+        log_entry = self.log.entry(term=self.term, command=slug, args=args, kwargs=kwargs)
 
         command_applied = asyncio.Event()
         self.pending_events[log_entry.index] = command_applied
@@ -199,7 +200,7 @@ class RaftServer:
     async def send_append_entries(self, entries, destination=('239.255.255.250', 10000)):
         prev = self.log[entries[0].index - 1] if entries else self.log.index - 1
         message = dict(
-            term=self.log.term,
+            term=self.term,
             leader_id=self.id,
             prev_log_index=prev.index,
             prev_log_term=prev.term,
@@ -213,9 +214,9 @@ class RaftServer:
         asyncio.ensure_future(self.send_append_entries([entry], destination=peer))
 
     def broadcast_request_vote(self):
-        last = self.log[-1] if len(self.log) > 0 else self.log.entry('')
+        last = self.log[-1] if len(self.log) > 0 else None
         message = dict(
-            term=self.log.term,
+            term=self.term,
             peer=self.id,
             last_log_index=last.index if last else 0,
             last_log_term=last.term if last else 0
@@ -226,11 +227,26 @@ class RaftServer:
     def election(self):
         self.state.start_election()
 
+    @property
+    def term(self):
+        return self.storage.term
+
+    @term.setter
+    def term(self, value):
+        self.storage.term = value
+    
+
     def add_peer(self, peer):
-        self.peers.add(peer)
+        # <http://stackoverflow.com/a/26853961/2183102>
+        self.storage.peers = {**self.storage.peers, **{peer['id']: peer}}
 
     def remove_peer(self, peer_id):
-        self.peers.remove(peer_id)
+        peers = self.storage.peers
+        try:
+            del peers[peer_id]
+        except KeyError:
+            return
+        self.storage.peers = peers
 
     def list_peers(self):
-        return list(self.peers)
+        return list(self.storage.peers)

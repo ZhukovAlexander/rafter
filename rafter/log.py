@@ -1,6 +1,7 @@
 import sys
 import collections
 import itertools
+import json
 
 import lmdb
 
@@ -15,24 +16,23 @@ def from_bytes(b):
     return int.from_bytes(b, sys.byteorder)
 
 
-COMMIT_INDEX = b'commit_index'
-TERM = b'term'
-
 class MetaDataField:
-    def __init__(self, key, encode=lambda x: x, default=None):
+    def __init__(self, key, from_raw=lambda x: x, to_raw=lambda x: str(x).encode(), default=None):
         self._key = key
         self._default = default
-        self._encode = encode
+        self.from_raw = from_raw
+        self.to_raw = to_raw
 
     def __get__(self, instance, owner):
         if instance is not None:
-            with instance.txn(db=instance.metadata_db) as txn:
-                return self._encode(txn.get(self._key, default=self._default))
+            with instance.env.begin(db=instance.attrs_store) as txn:
+                return self.from_raw(txn.get(self._key, default=self.to_raw(self._default)))
+        return self
 
     def __set__(self, instance, value):
         if instance is not None:
-            with instance.txn(write=True, db=instance.metadata_db) as txn:
-                txn.replace(self._key, str(value).encode())
+            with instance.env.begin(write=True, db=instance.attrs_store) as txn:
+                txn.replace(self._key, self.to_raw(value))
 
 
 # TODO: implement dynamic serizlizer
@@ -43,7 +43,7 @@ class RaftLog(collections.abc.MutableSequence):
 
         self.env = env or lmdb.open('/tmp/rafter.lmdb', max_dbs=10)
         self.db = db or self.env.open_db(b'rafter')
-        self.metadata_db = self.env.open_db(b'meta')
+        self.attrs_store = self.env.open_db(b'meta')
 
     def txn(self, db=None, write=False):
         return self.env.begin(write=write, db=db or self.db)
@@ -53,6 +53,8 @@ class RaftLog(collections.abc.MutableSequence):
             raise IndexError
         with self.txn(write=True) as txn:
             txn.replace(to_bytes(index), value.pack())
+
+    insert = __setitem__
 
     def __delitem__(self, index):
         with self.txn(write=True) as txn:
@@ -102,11 +104,23 @@ class RaftLog(collections.abc.MutableSequence):
         last = self[-1]
         return last_log_term > last.term or last_log_term == last.term and last.index <= last_log_index
 
-    def entry(self, command, args=(), kwargs=None):
-        self.append(LogEntry(dict(index=len(self), term=self.term, command=command, args=args, kwargs=kwargs or {})))
+    def entry(self, term, command, args=(), kwargs=None):
+        self.append(LogEntry(dict(index=len(self), term=term, command=command, args=args, kwargs=kwargs or {})))
         return self[-1]
 
     # I'm not really sure, if this data belongs here
-    term = MetaDataField(b'term', encode=int, default=b'0')
-    commit_index = MetaDataField(b'commit_index', encode=int, default=b'0')
-    voted_for = MetaDataField(b'voted_for', encode=lambda x: x.decode(), default=b'')
+    # term = MetaDataField(b'term', from_raw=int, to_raw=lambda x: str(x).encode(), default=0)
+    commit_index = MetaDataField(b'commit_index', from_raw=int, to_raw=lambda x: str(x).encode(), default=0)
+    # voted_for = MetaDataField(b'voted_for', from_raw=lambda x: x.decode(), default='')
+
+
+class Storage:
+
+    def __init__(self, env=None, db=None):
+
+        self.env = env or lmdb.open('/tmp/rafter.lmdb', max_dbs=10)
+        self.attrs_store = self.env.open_db(b'store')
+
+    term = MetaDataField(b'term', from_raw=int, to_raw=lambda x: str(x).encode(), default=0)
+    voted_for = MetaDataField(b'voted_for', from_raw=lambda x: x.decode(), default='')
+    peers = MetaDataField(b'peers', from_raw=lambda x: json.loads(x.decode()), to_raw=lambda x: json.dumps(x).encode(), default={})

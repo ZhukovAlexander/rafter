@@ -65,13 +65,6 @@ class BaseService(metaclass=ServiceMeta):
     def __init__(self, server):
         self._server = server
 
-    async def can_handle(self, slug, *args, **kwargs):
-        try:
-            return await self._server.handle_write_command(slug, args, kwargs)
-        except NotLeaderException as e:
-            logger.error('Access server that is not a leader')
-            raise
-
     async def dispatch(self, cmd, *args, **kwargs):
         try:
             command = getattr(self, cmd)
@@ -180,9 +173,9 @@ class JsonRpcHttpRequestHandler(aiohttp.server.ServerHttpProtocol):
 class JsonRPCService(BaseService):
     def setup(self):
         loop = asyncio.get_event_loop()
-        f = loop.create_server(
-            lambda: JsonRpcHttpRequestHandler(self, debug=True, keep_alive=75),
-            '0.0.0.0', '8080')
+        f = loop.create_server(lambda: JsonRpcHttpRequestHandler(self, debug=True, keep_alive=75),
+                               '0.0.0.0', 
+                               '8080')
         srv = loop.run_until_complete(f)
         logger.info('Started serving a JSON-RPC on %s', srv.sockets[0].getsockname())
 
