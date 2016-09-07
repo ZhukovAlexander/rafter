@@ -73,7 +73,8 @@ class RaftServer:
                  loop=None,
                  server_protocol=UDPProtocolProtobufServer,
                  client_protocol=UDPProtocolProtobufClient,
-                 config=None):
+                 config=None,
+                 bootstrap=False):
 
         self.host, self.port = address
 
@@ -81,7 +82,8 @@ class RaftServer:
         self.log = log or rlog.RaftLog()
         self.storage = storage or rlog.Storage()
         self.peers = Peers()
-        self.peers[self.id] = {}
+        if bootstrap:
+            self.peers[self.id] = {}
         self.match_index = defaultdict(lambda: self.log.commit_index)
         self.next_index = defaultdict(lambda: self.log.commit_index + 1)
 

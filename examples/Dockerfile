@@ -1,7 +1,6 @@
-FROM ubuntu
-RUN apt-get update
-RUN apt-get install -y python3.5 python3-pip
-RUN pip3 install setuptools
-COPY . /rafter
-RUN ls rafter
-RUN cd rafter && python3.5 setup.py develop
+FROM python:3.5
+COPY . ./rafter
+COPY ./examples/kv_store.py entrypoint.py
+RUN cd rafter && python setup.py develop
+WORKDIR .
+ENTRYPOINT ["python", "entrypoint.py"]

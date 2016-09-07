@@ -175,7 +175,7 @@ class JsonRPCService(BaseService):
         loop = asyncio.get_event_loop()
         f = loop.create_server(lambda: JsonRpcHttpRequestHandler(self, debug=True, keep_alive=75),
                                '0.0.0.0', 
-                               '8080')
+                               '11111')
         srv = loop.run_until_complete(f)
         logger.info('Started serving a JSON-RPC on %s', srv.sockets[0].getsockname())
 
