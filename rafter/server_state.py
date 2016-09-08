@@ -68,10 +68,22 @@ class Leader(StateBase):
         self.to_follower(term)
         return dict(term=self._server.term, vote=True, peer=self._server.id)
 
+    def retry_append_entries(self, term, index):
+        entry = self.log[index]
+        prev = self.log[index - 1]
+        return dict(term=self.term,
+                    leader_id=self.id,
+                    prev_log_index=prev.index,
+                    prev_log_term=prev.term,
+                    leader_commit=self.log.commit_index,
+                    entries=[entry])
+
     def append_entries_response(self, peer, term, index, success):
         if self._server.term == term:  # maybe this is not needed?
             logger.debug('self.current_term == term:')
-            self._server.maybe_commit(peer, term, index) if success else self._server.retry_ae(peer, term, index)
+            if success:
+                return self._server.maybe_commit(peer, term, index)
+            return self._server.retry_append_entries(peer, term, index)
 
     def election(self):
         logger.debug("Already a Leader, skip the election")

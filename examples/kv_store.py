@@ -9,7 +9,7 @@ from rafter.server import RaftServer
 if __name__ == '__main__':
 
     parser = OptionParser()
-    parser.add_option("-b", action='store_true', dest="bootstrap", help="write report to FILE")
+    parser.add_option("-b", action='store_true', dest="bootstrap", help="Set this flag if you are bootstrapping a cluster")
 
     (options, args) = parser.parse_args()
     server = RaftServer(JsonRPCService, bootstrap=options.bootstrap)

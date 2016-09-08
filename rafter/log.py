@@ -2,6 +2,7 @@ import sys
 import collections
 import itertools
 import json
+from uuid import uuid4
 
 import lmdb
 
@@ -17,7 +18,7 @@ def from_bytes(b):
 
 
 class MetaDataField:
-    def __init__(self, key, from_raw=lambda x: x, to_raw=lambda x: str(x).encode(), default=None):
+    def __init__(self, key, from_raw=lambda x: x, to_raw=lambda x: x, default=None):
         self._key = key
         self._default = default
         self.from_raw = from_raw
@@ -26,7 +27,11 @@ class MetaDataField:
     def __get__(self, instance, owner):
         if instance is not None:
             with instance.env.begin(db=instance.attrs_store) as txn:
-                return self.from_raw(txn.get(self._key, default=self.to_raw(self._default)))
+                val = txn.get(self._key)
+                if val is None:
+                    self.__set__(instance, self._default)
+                    return self._default
+                return self.from_raw(val)
         return self
 
     def __set__(self, instance, value):
@@ -124,3 +129,4 @@ class Storage:
     term = MetaDataField(b'term', from_raw=int, to_raw=lambda x: str(x).encode(), default=0)
     voted_for = MetaDataField(b'voted_for', from_raw=lambda x: x.decode(), default='')
     peers = MetaDataField(b'peers', from_raw=lambda x: json.loads(x.decode()), to_raw=lambda x: json.dumps(x).encode(), default={})
+    id = MetaDataField(b'id', to_raw=lambda x: x.encode(), from_raw=lambda x: x.decode(), default=uuid4().hex)

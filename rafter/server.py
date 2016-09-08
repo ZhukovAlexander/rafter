@@ -34,34 +34,6 @@ logger = logging.getLogger(__name__)
 
 asyncio.set_event_loop(uvloop.new_event_loop())
 
-class Peers(dict):
-    def __init__(self, path='/var/lib/rafter/rafter.peers', *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._path = path
-
-        dirname = os.path.dirname(self._path)
-
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-
-        if not os.path.exists(self._path):
-            self.clear()
-            self.dump()
-        else:
-            self.update(json.loads(open(self._path, 'r').read()))
-
-    def dump(self):
-        with open(self._path, 'w') as f:
-            f.write(json.dumps(self))
-
-    def add(self, peer):
-        self[peer['id']] = peer
-        self.dump()
-
-    def remove(self, peer_id):
-        self.pop(peer_id)
-        self.dump()
-
 
 class RaftServer:
 
@@ -78,12 +50,12 @@ class RaftServer:
 
         self.host, self.port = address
 
-        self.id = '{0}:{1}'.format('192.168.0.102', self.port)
         self.log = log or rlog.RaftLog()
         self.storage = storage or rlog.Storage()
-        self.peers = Peers()
+
         if bootstrap:
             self.peers[self.id] = {}
+
         self.match_index = defaultdict(lambda: self.log.commit_index)
         self.next_index = defaultdict(lambda: self.log.commit_index + 1)
 
@@ -103,6 +75,22 @@ class RaftServer:
         self.election_timer = ResetablePeriodicTask(callback=election)
 
         self.pending_events = {}
+
+    @property
+    def id(self):
+        return self.storage.id
+
+    @property
+    def term(self):
+        return self.storage.term
+
+    @term.setter
+    def term(self, value):
+        self.storage.term = value
+
+    @property
+    def peers(self):
+        return self.storage.peers
 
     def start(self):
 
@@ -185,7 +173,6 @@ class RaftServer:
         if not self.state.is_leader():
             raise NotLeaderException('This server is not a leader')
         logger.debug('handle_write_command')
-        # <http://stackoverflow.com/a/17307606/2183102>
         log_entry = self.log.entry(term=self.term, command=slug, args=args, kwargs=kwargs)
 
         command_applied = asyncio.Event()
@@ -228,15 +215,6 @@ class RaftServer:
 
     def election(self):
         self.state.start_election()
-
-    @property
-    def term(self):
-        return self.storage.term
-
-    @term.setter
-    def term(self, value):
-        self.storage.term = value
-    
 
     def add_peer(self, peer):
         # <http://stackoverflow.com/a/26853961/2183102>

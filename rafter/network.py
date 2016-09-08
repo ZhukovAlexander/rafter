@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 HANDELERS = {
     models.AppendEntriesRPCRequest: ('append_entries', models.AppendEntriesRPCResponse),
-    models.AppendEntriesRPCResponse: ('append_entries_response', None),
+    models.AppendEntriesRPCResponse: ('append_entries_response', models.AppendEntriesRPCRequest),
     models.RequestVoteRPCRequest: ('request_vote', models.RequestVoteRPCResponse),
     models.RequestVoteRPCResponse: ('request_vote_response', None)
 }
@@ -42,7 +42,7 @@ class UDPProtocolProtobufServer:
         handler, resp_class = HANDELERS[type(content)]
         result = self.server.handle(handler, **content.to_native())
 
-        if isinstance(content, (models.AppendEntriesRPCRequest, models.RequestVoteRPCRequest)):
+        if handler[1] is not None:
             logger.debug('Sending %s to %s', result, addr)
             self.transport.sendto(models.RaftMessage({'content': result}).pack(), addr)
 
