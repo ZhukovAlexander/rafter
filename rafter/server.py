@@ -89,6 +89,14 @@ class RaftServer:
         self.storage.term = value
 
     @property
+    def voted_for(self):
+        return self.storage.voted_for
+
+    @voted_for.setter
+    def voted_for(self, value):
+        self.storage.voted_for = value
+
+    @property
     def peers(self):
         return self.storage.peers
 

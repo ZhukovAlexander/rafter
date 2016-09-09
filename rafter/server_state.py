@@ -16,7 +16,7 @@ class StateBase:
         self.log = log
 
     def to_follower(self, term):
-        self._server.state = Follower(self._sever, self.log)
+        self._server.state = Follower(self._server, self.log)
         self._server.term = term
 
     def to_leader(self):
@@ -38,18 +38,21 @@ class StateBase:
     def request_vote(self, term, peer, last_log_index, last_log_term):
         if term < self._server.term:
             return dict(term=self._server.term, vote=False)
+        elif term > self._server.term:
+            self.to_follower(term)
+            return self._server.state.request_vote(term, peer, last_log_index, last_log_term)
         return self._request_vote(term, peer, last_log_index, last_log_term)
 
     def append_entries_response(self, peer, term, index, success):
-        pass
+        pass  # pragma: no cover
 
     def request_vote_response(self, term, vote, peer):
-        pass
+        pass  # pragma: no cover
 
     def election(self):
         logger.debug('Starting new election for term {}'.format(self._server.term + 1))
         self.to_candidate()
-        self._server.storage.term += 1
+        self._server.term += 1
         self._votes.clear()
         self._server.broadcast_request_vote()
 
@@ -65,14 +68,13 @@ class Leader(StateBase):
     def _request_vote(self, term, peer, last_log_index, last_log_term):
         if peer == self._server.id:
             return dict(term=self._server.term, vote=True, peer=self._server.id)
-        self.to_follower(term)
-        return dict(term=self._server.term, vote=True, peer=self._server.id)
+        return dict(term=self._server.term, vote=False, peer=self._server.id)
 
     def retry_append_entries(self, term, index):
         entry = self.log[index]
         prev = self.log[index - 1]
-        return dict(term=self.term,
-                    leader_id=self.id,
+        return dict(term=self._server.term,
+                    leader_id=self._server.id,
                     prev_log_index=prev.index,
                     prev_log_term=prev.term,
                     leader_commit=self.log.commit_index,
@@ -83,10 +85,10 @@ class Leader(StateBase):
             logger.debug('self.current_term == term:')
             if success:
                 return self._server.maybe_commit(peer, term, index)
-            return self._server.retry_append_entries(peer, term, index)
+            return self.retry_append_entries(term, index)
 
     def election(self):
-        logger.debug("Already a Leader, skip the election")
+        logger.debug("Already a Leader, skip the election")  # pragma: no cover
 
 
 class Candidate(StateBase):
@@ -96,7 +98,6 @@ class Candidate(StateBase):
         return self._server.state.append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
     def _request_vote(self, term, peer, last_log_index, last_log_term):
-        logger.debug(self._server.id)
         if peer == self._server.id:
             return dict(term=self._server.term, vote=True, peer=self._server.id)
         return dict(term=self._server.term, vote=False, peer=self._server.id)
@@ -112,20 +113,21 @@ class Follower(StateBase):
 
     def _append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
         # apply to local
+        entries = entries or []
         try:
             prev_log_entry = self.log[prev_log_index]
         except IndexError:
-            return dict(index=prev_log_index, term=self.current_term, success=False)
+            return dict(index=prev_log_index, term=self._server.term, success=False)
         if prev_log_entry.term != term:
             del self.log[prev_log_entry.index:]
         self.log.extend(entries)
-        if leader_commit > self.commit_index:
-            self.commit_index = min(leader_commit, self.commit_index)
-        return dict(index=prev_log_index, term=self.current_term, success=True)
+        if leader_commit > self.log.commit_index:
+            self.log.commit_index = min(leader_commit, self.log.commit_index)
+        return dict(index=prev_log_index, term=self._server.term, success=True)
 
     def _request_vote(self, term, peer, last_log_index, last_log_term):
-        if self.log.voted_for in ('', peer) and self.log.cmp(last_log_index, last_log_term):
-            self.log.voted_for = peer
+        if self._server.voted_for in ('', peer) and self.log.cmp(last_log_index, last_log_term):
+            self._server.voted_for = peer
             return dict(term=self._server.term, vote=True, peer=self._server.id)
         return dict(term=self._server.term, vote=False, peer=self._server.id)
 
