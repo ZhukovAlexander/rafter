@@ -1,0 +1,11 @@
+language: python
+python:
+  - "3.5"
+  - "3.5-dev"
+  - "nightly"
+
+install:
+  - "python setup.py install"
+  - "pip install pytest pytest-cov"
+
+script: py.test tests/
