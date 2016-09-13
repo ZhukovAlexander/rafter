@@ -39,6 +39,11 @@ class BaseStateTestCase(ServerStateBaseTest):
         self.assertIsInstance(self.server.state, Candidate)
         self.server.broadcast_request_vote.assert_called_with()
 
+    def test_append_entries_as_heartbeat(self):
+        res = self.state.append_entries(self.server.term, self.server.id, 1, 1, 1)
+        self.assertIsNone(res)
+        self.server.election_timer.reset.assert_called_with()
+
 
 
 class LeaderTestCase(ServerStateBaseTest):
@@ -48,15 +53,15 @@ class LeaderTestCase(ServerStateBaseTest):
         self.state = Leader(self.server, self.log)
 
     def test_append_entries_fail_for_old_term(self):
-        res = self.state.append_entries(self.server.term - 1, 1, 1, 1, 1)
+        res = self.state.append_entries(self.server.term - 1, 1, 1, 1, 1, entries=[None])
         self.assertFalse(res['success'])
 
     def test_append_entries_to_itself_succeds(self):
-        res = self.state.append_entries(self.server.term, self.server.id, 1, 1, 1)
+        res = self.state.append_entries(self.server.term, self.server.id, 1, 1, 1, entries=[None])
         self.assertTrue(res['success'])
 
     def test_append_entries_converts_to_follower_newer_term(self):
-        res = self.state.append_entries(self.server.term + 1, 1, 1, 1, 1)
+        res = self.state.append_entries(self.server.term + 1, 1, 1, 1, 1, entries=[None])
         self.assertIsInstance(self.server.state, Follower)
 
     def test_request_vote_false_old_term(self):
@@ -96,7 +101,7 @@ class CandidateTestCase(ServerStateBaseTest):
         self.assertFalse(res['success'])
 
     def test_append_entries_convert_to_follower(self):
-        res = self.state.append_entries(self.server.term, 1, len(self.log) -1, 1, 1)
+        res = self.state.append_entries(self.server.term, 1, len(self.log) -1, 1, 1, entries=[None])
         self.assertIsInstance(self.server.state, Follower)
         self.assertTrue(res['success'])
 

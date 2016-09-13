@@ -184,10 +184,3 @@ class JsonRPCService(BaseService):
         logger.debug('Result of {0} + {1} is {2}'.format(a, b, a + b))
         self.res = a + b
         return a + b
-
-
-from .server import RaftServer
-server = RaftServer(JsonRPCService)
-server.start()
-
-asyncio.get_event_loop().run_forever()

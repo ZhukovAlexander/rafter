@@ -28,7 +28,7 @@ def make_socket(host, port, group='239.255.255.250'):
     return sock
 
 
-class UDPProtocolProtobufServer:
+class UPDProtocolMsgPackServer:
 
     def __init__(self, server):
         self.server = server
@@ -42,7 +42,7 @@ class UDPProtocolProtobufServer:
         handler, resp_class = HANDELERS[type(content)]
         result = self.server.handle(handler, **content.to_native())
 
-        if handler[1] is not None:
+        if resp_class is not None and result:
             logger.debug('Sending %s to %s', result, addr)
             self.transport.sendto(models.RaftMessage({'content': result}).pack(), addr)
 
@@ -50,7 +50,7 @@ class UDPProtocolProtobufServer:
         logger.info('Closing server transport at {}:{}'.format(*self.transport.get_extra_info('sockname')))
 
 
-class UDPProtocolProtobufClient:
+class UPDProtocolMsgPackClient:
 
     def __init__(self, server, queue, loop):
         self.server = server

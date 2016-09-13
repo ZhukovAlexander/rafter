@@ -80,7 +80,7 @@ class RaftLog(collections.abc.MutableSequence):
     def __getitem__(self, index):
         with self.txn() as txn:
             if isinstance(index, int):
-                if index >= len(self):
+                if abs(index) > len(self):
                     raise IndexError('log index out of range')
                 return LogEntry.unpack(txn.get(to_bytes(len(self) + index if index < 0 else index)))
 

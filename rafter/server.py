@@ -16,7 +16,7 @@ import uvloop
 from . import server_state
 from . import log as rlog
 from . import models
-from .network import UDPProtocolProtobufClient, UDPProtocolProtobufServer, make_socket, ResetablePeriodicTask
+from .network import UPDProtocolMsgPackClient, UPDProtocolMsgPackServer, make_socket, ResetablePeriodicTask
 from .exceptions import NotLeaderException
 
 
@@ -43,8 +43,8 @@ class RaftServer:
                  log=None,
                  storage=None,
                  loop=None,
-                 server_protocol=UDPProtocolProtobufServer,
-                 client_protocol=UDPProtocolProtobufClient,
+                 server_protocol=UPDProtocolMsgPackServer,
+                 client_protocol=UPDProtocolMsgPackClient,
                  config=None,
                  bootstrap=False):
 
@@ -53,8 +53,10 @@ class RaftServer:
         self.log = log or rlog.RaftLog()
         self.storage = storage or rlog.Storage()
 
-        if bootstrap:
-            self.peers[self.id] = {}
+        self.bootstrap = bootstrap
+
+        if self.bootstrap:
+            self.storage.peers = {self.id: {'id': self.id}}
 
         self.match_index = defaultdict(lambda: self.log.commit_index)
         self.next_index = defaultdict(lambda: self.log.commit_index + 1)
@@ -73,8 +75,17 @@ class RaftServer:
             self.state.election()
 
         self.election_timer = ResetablePeriodicTask(callback=election)
+        self.heartbeats = ResetablePeriodicTask(interval=0.05,
+                                                callback=lambda: self.heartbeat(bootstraps=bootstrap))
 
         self.pending_events = {}
+
+    def heartbeat(self, bootstraps=False):
+        self.heartbeat = lambda bootstraps=False: asyncio.ensure_future(self.send_append_entries())
+        if bootstraps and len(self.log) == 0:
+            asyncio.ensure_future(self.service.add_peer(self.peers[self.id]))
+        else:
+            self.heartbeat()
 
     @property
     def id(self):
@@ -194,13 +205,13 @@ class RaftServer:
             raise NotLeaderException('This server is not a leader')
         return await self._apply_single(command, args, kwargs)
 
-    async def send_append_entries(self, entries, destination=('239.255.255.250', 10000)):
-        prev = self.log[entries[0].index - 1] if entries else self.log.index - 1
+    async def send_append_entries(self, entries=(), destination=('239.255.255.250', 10000)):
+        prev = self.log[entries[0].index - 1] if entries else None
         message = dict(
             term=self.term,
             leader_id=self.id,
-            prev_log_index=prev.index,
-            prev_log_term=prev.term,
+            prev_log_index=prev.index if prev else None,
+            prev_log_term=prev.term if prev else None,
             leader_commit=self.log.commit_index,
             entries=entries)
 
@@ -220,9 +231,6 @@ class RaftServer:
         )
 
         asyncio.ensure_future(self.queue.put((message, ('239.255.255.250', 10000))))
-
-    def election(self):
-        self.state.start_election()
 
     def add_peer(self, peer):
         # <http://stackoverflow.com/a/26853961/2183102>

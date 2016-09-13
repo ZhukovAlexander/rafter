@@ -22,6 +22,7 @@ class StateBase:
     def to_leader(self):
         self._server.state = Leader(self._server, self.log)
         self._server.election_timer.stop()
+        self._server.heartbeats.start()
         logger.debug('Switched to Leader with term {}'.format(self._server.term))
 
     def to_candidate(self):
@@ -33,7 +34,10 @@ class StateBase:
     def append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
         if term < self._server.term:
             return dict(peer=self._server.id, index=self.log.commit_index, term=self._server.term, success=False)
-        return self._append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
+        if not entries:  # heartbeat
+            self._server.election_timer.reset()
+        else:
+            return self._append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
     def request_vote(self, term, peer, last_log_index, last_log_term):
         if term < self._server.term:
@@ -61,7 +65,7 @@ class Leader(StateBase):
 
     def _append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
         if leader_id == self._server.id:  # handle append entries rpc from itself
-            return dict(peer=self._server.id, index=self.log[-1].index, term=term, success=True)
+            return dict(peer=self._server.id, index=len(self.log) - 1, term=term, success=True)
         self.to_follower(term)
         return self._server.state.append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
