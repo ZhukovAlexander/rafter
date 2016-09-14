@@ -59,12 +59,11 @@ class RaftLog(collections.abc.MutableSequence):
         with self.txn(write=True) as txn:
             txn.replace(to_bytes(index), value.pack())
 
-    insert = __setitem__
-
     def __delitem__(self, index):
         with self.txn(write=True) as txn:
             if isinstance(index, int):
-                txn.delete(to_bytes(index).encode())
+                if not txn.delete(to_bytes(index)):
+                    raise IndexError('log index out of range')
             elif isinstance(index, slice):
                 curr = txn.cursor()
                 curr.set_key(to_bytes(index.start))
@@ -80,7 +79,7 @@ class RaftLog(collections.abc.MutableSequence):
     def __getitem__(self, index):
         with self.txn() as txn:
             if isinstance(index, int):
-                if abs(index) > len(self):
+                if index >= len(self) or index < -len(self):
                     raise IndexError('log index out of range')
                 return LogEntry.unpack(txn.get(to_bytes(len(self) + index if index < 0 else index)))
 
@@ -88,12 +87,12 @@ class RaftLog(collections.abc.MutableSequence):
                 cur = txn.cursor()
                 cur.set_key(to_bytes(index.start or 0))
                 return [LogEntry.unpack(item[1]) for item in
-                        itertools.takewhile(lambda item: from_bytes(item[0]) <= index.stop if index.stop else True, cur)]
+                        itertools.takewhile(lambda item: from_bytes(item[0]) < index.stop if index.stop else True, cur)]
             else:
                 raise TypeError('log indices must be integers or slices, not {}'.format(type(index).__name__))
 
-    def insert(self, index, value):
-        self[index] = value
+    def insert(self, index, value):  # pragma: nocover
+        raise NotImplementedError
 
     def append(self, value):
         if value.index != len(self):
@@ -102,7 +101,7 @@ class RaftLog(collections.abc.MutableSequence):
             txn.put(to_bytes(value.index), value.pack(), append=True)
 
     def extend(self, l):
-        with self.txn() as txn:
+        with self.txn(write=True) as txn:
             return txn.cursor().putmulti([(to_bytes(e.index), e.pack()) for e in l], append=True)
 
     def cmp(self, last_log_index, last_log_term):
@@ -113,10 +112,7 @@ class RaftLog(collections.abc.MutableSequence):
         self.append(LogEntry(dict(index=len(self), term=term, command=command, args=args, kwargs=kwargs or {})))
         return self[-1]
 
-    # I'm not really sure, if this data belongs here
-    # term = MetaDataField(b'term', from_raw=int, to_raw=lambda x: str(x).encode(), default=0)
     commit_index = MetaDataField(b'commit_index', from_raw=int, to_raw=lambda x: str(x).encode(), default=0)
-    # voted_for = MetaDataField(b'voted_for', from_raw=lambda x: x.decode(), default='')
 
 
 class Storage:
