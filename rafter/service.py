@@ -76,19 +76,19 @@ class BaseService(metaclass=ServiceMeta):
         return await command(*args, **kwargs)
 
     @abstractmethod
-    async def setup(self):
+    async def setup(self):  # pragma: nocover
         raise NotImplementedError
 
     @exposed(write=False)
-    def peers(self):
+    def peers(self):  # pragma: nocover
         return self._server.list_peers()
 
     @exposed
-    def add_peer(self, peer):
+    def add_peer(self, peer):  # pragma: nocover
         self._server.add_peer(peer)
 
     @exposed
-    def remove_peer(self, peer_id):
+    def remove_peer(self, peer_id):  # pragma: nocover
         self._server.remove_peer(peer_id)
 
 
@@ -122,7 +122,7 @@ class JsonRpcHttpRequestHandler(aiohttp.server.ServerHttpProtocol):
 
     async def handle_request(self, message, payload):
 
-        if message.path != '/jsonrpc/method/':
+        if message.path != '/jsonrpc/method/':  # pragma: nocover
             # return 404
             return await super().handle_request(message, payload)
 
@@ -178,9 +178,3 @@ class JsonRPCService(BaseService):
                                '11111')
         srv = loop.run_until_complete(f)
         logger.info('Started serving a JSON-RPC on %s', srv.sockets[0].getsockname())
-
-    @exposed
-    def foo(self, a, b):
-        logger.debug('Result of {0} + {1} is {2}'.format(a, b, a + b))
-        self.res = a + b
-        return a + b
