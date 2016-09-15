@@ -8,6 +8,7 @@ from rafter.service import exposed, ExposedCommand, ServiceMeta, JsonRPCService,
 from rafter import service
 from rafter.exceptions import UnboundExposedCommand, UnknownCommand
 
+
 class DecoratorTest(unittest.TestCase):
 
     def test_with_args(self):
