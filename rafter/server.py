@@ -117,8 +117,7 @@ class RaftServer:
 
         for signame in ('SIGINT', 'SIGTERM'):
             # <http://stackoverflow.com/questions/23313720/asyncio-how-can-coroutines-be-used-in-signal-handlers>
-            self.loop.add_signal_handler(
-                getattr(signal, signame), self.stop, signame)
+            self.loop.add_signal_handler(getattr(signal, signame), self.stop, signame)
 
         # actually, this is questionable to share the same socket address between to protocols, but for now I wan't to separate
         # client and server logic, and we obviously have to use the same

@@ -17,11 +17,11 @@ class Storage(mock.Mock):
     id = 'testserver'
     peers = {}
 
-async def foo():
+async def foo(*args, **kwargs):
     return 'result'
 
 
 class Service(mock.Mock):
 
     test = mock.MagicMock()
-    test.apply.return_value = foo() 
+    test.apply = foo

@@ -13,13 +13,27 @@ from .mocks import Log, Storage, Service
 class RaftServerTest(unittest.TestCase):
     def setUp(self):
         self.loop = asyncio.get_event_loop()
-        self.server = RaftServer(Service(), log=Log(), server_protocol=mock.Mock(), storage=Storage(), bootstrap=True)
+        self.server = RaftServer(
+            Service(),
+            log=Log(),
+            server_protocol=mock.Mock(),
+            client_protocol=mock.Mock(),
+            storage=Storage(),
+            bootstrap=True
+        )
         self.server.election_timer = mock.Mock()
 
     def test_start_stop(self):
+        server = RaftServer(
+            Service(),
+            log=Log(),
+            storage=Storage(),
+            bootstrap=True
+        )
+        server.election_timer = mock.Mock()
         with mock.patch('rafter.server.random.randint', return_value=100):
-            self.server.start()
-            self.server.election_timer.start.assert_called_with(1)
+            server.start()
+            server.election_timer.start.assert_called_with(1)
 
     def test_initial_heartbeat_calls_add_peer(self):
         with mock.patch('rafter.server.asyncio.ensure_future') as ensure_future:
@@ -43,7 +57,7 @@ class RaftServerTest(unittest.TestCase):
         entry = LogEntry(dict(index=0, term=self.server.term, command='test', args=(), kwargs={}))
         self.server.log.append(entry)
         self.server.pending_events[entry.index] = asyncio.Event()
-        res = asyncio.get_event_loop().run_until_complete(
+        res = self.loop.run_until_complete(
             self.server.maybe_commit(self.server.id, self.server.term, entry.index)
         )
         self.assertTrue(self.server.pending_events[entry.index].is_set())

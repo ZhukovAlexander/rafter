@@ -19,7 +19,10 @@ def make_socket(host, port, group='239.255.255.250'):
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+    except AttributeError:
+        pass  # Some systems don't support SO_REUSEPORT
     sock.bind((host, port))
     group = socket.inet_aton(group)
     mreq = struct.pack('4sL', group, socket.INADDR_ANY)

@@ -8,6 +8,11 @@ install:
   - "python setup.py install"
   - "pip install pytest pytest-cov coveralls"
 
-script: coverage run --source rafter -m py.test tests/
+script: coverage run --source rafter -m py.test -v -s tests/
 after_success:
   coveralls
+
+matrix:
+  allow_failures: # uvloop breaks on these versions
+    - python: "3.5-dev"
+    - python: "nightly"
