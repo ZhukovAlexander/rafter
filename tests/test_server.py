@@ -1,0 +1,93 @@
+import unittest
+from unittest import mock
+
+import asyncio
+
+from rafter.server import RaftServer
+from rafter.models import LogEntry
+from rafter.exceptions import NotLeaderException
+
+from .mocks import Log, Storage, Service
+
+
+class RaftServerTest(unittest.TestCase):
+    def setUp(self):
+        self.loop = asyncio.get_event_loop()
+        self.server = RaftServer(Service(), log=Log(), server_protocol=mock.Mock(), storage=Storage(), bootstrap=True)
+        self.server.election_timer = mock.Mock()
+
+    def test_start_stop(self):
+        with mock.patch('rafter.server.random.randint', return_value=100):
+            self.server.start()
+            self.server.election_timer.start.assert_called_with(1)
+
+    def test_initial_heartbeat_calls_add_peer(self):
+        with mock.patch('rafter.server.asyncio.ensure_future') as ensure_future:
+            self.server.heartbeat(bootstraps=True)
+            ensure_future.assert_called_with(self.server.service.add_peer())
+
+    def test_heartbeat_should_schedule_ae(self):
+        with mock.patch('rafter.server.asyncio.ensure_future') as ensure_future:
+            self.server.send_append_entries = mock.Mock()
+            self.server.heartbeat(bootstraps=False)
+            ensure_future.assert_called_with(self.server.send_append_entries())
+
+    def test_handle_calls_correct_state_method(self):
+        self.server.state = mock.Mock()
+        method = 'test_method'
+        res = self.server.handle(method)
+        getattr(self.server.state, method).assert_called_with()
+
+
+    def test_maybe_commit_should_notify_clients(self):
+        entry = LogEntry(dict(index=0, term=self.server.term, command='test', args=(), kwargs={}))
+        self.server.log.append(entry)
+        self.server.pending_events[entry.index] = asyncio.Event()
+        res = asyncio.get_event_loop().run_until_complete(
+            self.server.maybe_commit(self.server.id, self.server.term, entry.index)
+        )
+        self.assertTrue(self.server.pending_events[entry.index].is_set())
+        self.assertEqual(self.server.log.commit_index, entry.index)
+
+    def test_handle_write_command_should_send_append_entries(self):
+        self.server.state.to_leader()
+        res = self.loop.run_until_complete(self.server.handle_write_command('test', (1, 2), {1: 1}))
+        self.assertTrue(res)
+        message, address = self.loop.run_until_complete(self.server.queue.get())
+        self.assertDictContainsSubset(dict(
+            term=self.server.term,
+            leader_id=self.server.id,
+            leader_commit=self.server.log.commit_index,
+            entries=[self.server.log[-1]]
+        ), message)
+
+    def test_handle_write_raises_error_when_not_leader(self):
+        with self.assertRaises(NotLeaderException):
+            self.loop.run_until_complete(self.server.handle_write_command('test', (1, 2), {1: 1}))
+
+    def test_handle_read_command(self):
+        self.server.state.to_leader()
+        res = self.loop.run_until_complete(self.server.handle_read_command('test', (1, 2), {1: 1}))
+        self.assertEqual(res, 'result')
+
+    def test_handle_read_raises_error_when_not_leader(self):
+        with self.assertRaises(NotLeaderException):
+            self.loop.run_until_complete(self.server.handle_read_command('test', (1, 2), {1: 1}))
+
+    def test_broadcast_request_vote(self):
+        self.loop.run_until_complete(self.server.broadcast_request_vote())
+        message, address = self.loop.run_until_complete(self.server.queue.get())
+        self.assertDictContainsSubset(dict(term=self.server.term, peer=self.server.id), message)
+
+    def test_add_peer(self):
+        self.server.add_peer({'id': 'peer-2'})
+        self.assertIn('peer-2', self.server.peers)
+
+    def test_remove_peer(self):
+        with self.assertRaises(KeyError):
+            self.server.remove_peer('notapeer')
+        self.server.remove_peer(self.server.id)
+        self.assertNotIn(self.server.id, self.server.peers)
+
+    def test_list_peers(self):
+        self.assertListEqual(self.server.list_peers(), list(self.server.peers))
