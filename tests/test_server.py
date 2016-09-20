@@ -17,7 +17,6 @@ class RaftServerTest(unittest.TestCase):
             Service(),
             log=Log(),
             server_protocol=mock.Mock(),
-            client_protocol=mock.Mock(),
             storage=Storage(),
             bootstrap=True
         )

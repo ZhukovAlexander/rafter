@@ -21,7 +21,7 @@ def make_socket(host, port, group='239.255.255.250'):
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-    except AttributeError:
+    except AttributeError:  # pragma: nocover
         pass  # Some systems don't support SO_REUSEPORT
     sock.bind((host, port))
     group = socket.inet_aton(group)
@@ -33,11 +33,20 @@ def make_socket(host, port, group='239.255.255.250'):
 
 class UPDProtocolMsgPackServer:
 
-    def __init__(self, server):
+    def __init__(self, server, queue):
         self.server = server
+        self.queue = queue
 
     def connection_made(self, transport):
         self.transport = transport
+
+        asyncio.ensure_future(self.start())
+
+    async def start(self):
+        while not self.transport.is_closing():
+            data, dest = await self.queue.get()
+            logger.debug('Sending %s to %s', data, dest)
+            self.transport.sendto(models.RaftMessage({'content': data}).pack(), dest)
 
     def datagram_received(self, data, addr):
         content = models.RaftMessage.unpack(data).content
@@ -49,33 +58,8 @@ class UPDProtocolMsgPackServer:
             logger.debug('Sending %s to %s', result, addr)
             self.transport.sendto(models.RaftMessage({'content': result}).pack(), addr)
 
-    def connection_lost(self, exc):
+    def connection_lost(self, exc):  # pragma: nocover
         logger.info('Closing server transport at {}:{}'.format(*self.transport.get_extra_info('sockname')))
-
-
-class UPDProtocolMsgPackClient:
-
-    def __init__(self, server, queue, loop):
-        self.server = server
-        self.queue = queue
-        self.loop = loop
-
-    def connection_made(self, transport):
-        self.transport = transport
-
-        asyncio.ensure_future(self.start())
-
-    def datagram_received(self, data, addr):
-        pass
-
-    async def start(self):
-        while not self.transport.is_closing():
-            data, dest = await self.queue.get()
-            logger.debug('Sending %s to %s', data, dest)
-            self.transport.sendto(models.RaftMessage({'content': data}).pack(), dest)
-
-    def connection_lost(self, exc):
-        logger.info('Closing client transport at {}:{}'.format(*self.transport.get_extra_info('sockname')))
 
 
 class ResetablePeriodicTask:
@@ -105,6 +89,6 @@ class ResetablePeriodicTask:
         self._running = False
         self._handler.cancel()
 
-    def reset(self):
+    def reset(self):  # pragma: nocover
         self.stop()
         self.start()

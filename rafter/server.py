@@ -16,7 +16,7 @@ import uvloop
 from . import server_state
 from . import log as rlog
 from . import models
-from .network import UPDProtocolMsgPackClient, UPDProtocolMsgPackServer, make_socket, ResetablePeriodicTask
+from .network import UPDProtocolMsgPackServer, make_socket, ResetablePeriodicTask
 from .exceptions import NotLeaderException
 
 
@@ -44,7 +44,7 @@ class RaftServer:
                  storage=None,
                  loop=None,
                  server_protocol=UPDProtocolMsgPackServer,
-                 client_protocol=UPDProtocolMsgPackClient,
+                 # client_protocol=UPDProtocolMsgPackClient,
                  config=None,
                  bootstrap=False):
 
@@ -67,8 +67,8 @@ class RaftServer:
         self.queue = asyncio.Queue(loop=self.loop)
 
         self.state = server_state.Follower(self, self.log)
-        self.server_protocol = server_protocol(self)
-        self.client_protocol = client_protocol(self, self.queue, self.loop)
+        self.server_protocol = server_protocol(self, self.queue)
+        # self.client_protocol = client_protocol(self, self.queue, self.loop)
         self.service = service(self)
 
         def election():  # pragma: nocover
@@ -128,18 +128,13 @@ class RaftServer:
                 lambda: self.server_protocol, sock=sock)
         )
 
-        self.client_transport, self.client_protocol = self.loop.run_until_complete(
-            self.loop.create_datagram_endpoint(
-                lambda: self.client_protocol, sock=sock)
-        )
-
         self.election_timer.start(random.randint(15, 30) / 100)
         self.service.setup()
 
     def stop(self, signame):  # pragma: nocover
         logger.info('Got signal {}, exiting...'.format(signame))
         self.server_transport.close()
-        self.client_transport.close()
+        # self.client_transport.close()
         self.loop.stop()
 
     def handle(self, message_type, **kwargs):
