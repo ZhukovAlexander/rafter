@@ -44,7 +44,6 @@ class RaftServer:
                  storage=None,
                  loop=None,
                  server_protocol=UPDProtocolMsgPackServer,
-                 # client_protocol=UPDProtocolMsgPackClient,
                  config=None,
                  bootstrap=False):
 
@@ -68,7 +67,6 @@ class RaftServer:
 
         self.state = server_state.Follower(self, self.log)
         self.server_protocol = server_protocol(self, self.queue)
-        # self.client_protocol = client_protocol(self, self.queue, self.loop)
         self.service = service(self)
 
         def election():  # pragma: nocover
@@ -119,9 +117,6 @@ class RaftServer:
             # <http://stackoverflow.com/questions/23313720/asyncio-how-can-coroutines-be-used-in-signal-handlers>
             self.loop.add_signal_handler(getattr(signal, signame), self.stop, signame)
 
-        # actually, this is questionable to share the same socket address between to protocols, but for now I wan't to separate
-        # client and server logic, and we obviously have to use the same
-        # address because other nodes will use it as a destination
         sock = make_socket(host=self.host, port=self.port)
         self.server_transport, self.server_protocol = self.loop.run_until_complete(
             self.loop.create_datagram_endpoint(
@@ -134,7 +129,6 @@ class RaftServer:
     def stop(self, signame):  # pragma: nocover
         logger.info('Got signal {}, exiting...'.format(signame))
         self.server_transport.close()
-        # self.client_transport.close()
         self.loop.stop()
 
     def handle(self, message_type, **kwargs):

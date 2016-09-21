@@ -18,7 +18,7 @@ class Log(list):
 class ServerStateBaseTest(unittest.TestCase):
     def setUp(self):
         self.server = Server()
-        self.log = Log([LogEntry(dict(term=0, index=0))])
+        self.log = Log([LogEntry(dict(term=self.server.term, index=0))])
 
 class BaseStateTestCase(ServerStateBaseTest):
     def setUp(self):
@@ -124,15 +124,18 @@ class FollowerTestCase(ServerStateBaseTest):
         super().setUp()
         self.state = Follower(self.server, self.log)
 
-    def test_append_entries(self):
+    def test_append_entries_should_apply_commited(self):
+        self.log.append(LogEntry(dict(term=self.server.term, index=len(self.log))))
+        leader_commit = len(self.log) - 1
         res = self.state.append_entries(
             self.server.term, 'leader-1',
-            len(self.log) - 1,
+            leader_commit,
             self.log[-1].term,
             1,
-            entries=[LogEntry(dict(term=2, index=len(self.log)))]
+            entries=[LogEntry(dict(term=self.server.term, index=len(self.log)))]
         )
         self.assertTrue(res['success'])
+        self.state._server.apply_commited.assert_called_with(self.log.commit_index, leader_commit)
 
     def test_request_vote_succeds_log_up_to_date(self):
         last_log_term = self.server.term

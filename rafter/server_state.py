@@ -126,6 +126,7 @@ class Follower(StateBase):
             del self.log[prev_log_entry.index:]
         self.log.extend(entries)
         if leader_commit > self.log.commit_index:
+            self._server.apply_commited(self.log.commit_index, leader_commit)
             self.log.commit_index = min(leader_commit, self.log.commit_index)
         return dict(index=prev_log_index, term=self._server.term, success=True)
 
