@@ -162,3 +162,50 @@ class PersistentDict(collections.abc.MutableMapping):
             # <http://stackoverflow.com/a/37016188>
             return txn.stat()['entries']
 
+
+
+"""
+async def notify(c):
+    async with c: 
+        c.notify_all()
+n = 0
+
+def wait(c):
+    global n
+    if n >= 4:
+        return n
+    n += 1
+    asyncio.ensure_future(notify(c))
+    return False
+
+async def get_await():
+    c = asyncio.Condition()
+    async with c:
+        print(await c.wait_for(lambda: wait(c)))
+
+import asyncio
+print(asyncio.get_event_loop().run_until_complete(get_await()))
+"""
+import asyncio
+
+
+class AsyncDict(dict):
+
+    def __init__(self, *args, **kwargs, *, loop=None):
+        super().__init__(*args, **kwargs)
+        self._loop = loop or asyncio.get_event_loop()
+        self._waiters = collections.defaultdict(lambda: asyncio.Condition(loop=self._loop))
+
+    async def wait_for(self, key):
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            c = self._waiters[key]
+            async with c:
+                return await c.wait_for(lambda: super(self.__class__, self).get(key))
+
+    async def set(self, key, value):
+        c = self._waiters[key]
+        async with c:
+            super().__setitem__(key, value)
+            c.notify_all()
