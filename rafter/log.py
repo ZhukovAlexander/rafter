@@ -5,6 +5,7 @@ import json
 from uuid import uuid4
 
 import lmdb
+from msgpack import packb, unpackb
 
 from .models import LogEntry
 
@@ -126,3 +127,38 @@ class Storage:
     voted_for = MetaDataField(b'voted_for', from_raw=lambda x: x.decode(), default='')
     peers = MetaDataField(b'peers', from_raw=lambda x: json.loads(x.decode()), to_raw=lambda x: json.dumps(x).encode(), default={})
     id = MetaDataField(b'id', to_raw=lambda x: x.encode(), from_raw=lambda x: x.decode(), default=uuid4().hex)
+
+
+class PersistentDict(collections.abc.MutableMapping):
+
+    def __init__(self, env, db, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.env = env
+        self.db = db
+
+    def __setitem__(self, key, value):
+        with self.env.begin(write=True, db=self.db) as txn:
+            txn.replace(packb(key), packb(value))
+
+    def __getitem__(self, key):
+        val = None
+        with self.env.begin(db=self.db) as txn:
+            val = txn.get(packb(key))
+        if val is None:
+            raise KeyError(key)
+        return unpackb(val)
+
+    def __delitem__(self, key):
+        with self.env.begin(write=True, db=self.db) as txn:
+            if not txn.delete(packb(key)):
+                raise KeyError(key)
+
+    def __iter__(self):
+        with self.env.begin(db=self.db) as txn:
+            yield from (unpackb(k) for k in txn.cursor().iternext(values=False))
+
+    def __len__(self):
+        with self.env.begin(db=self.db) as txn:
+            # <http://stackoverflow.com/a/37016188>
+            return txn.stat()['entries']
+

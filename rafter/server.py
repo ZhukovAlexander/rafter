@@ -69,10 +69,7 @@ class RaftServer:
         self.server_protocol = server_protocol(self, self.queue)
         self.service = service(self)
 
-        def election():  # pragma: nocover
-            self.state.election()
-
-        self.election_timer = ResetablePeriodicTask(callback=election)
+        self.election_timer = ResetablePeriodicTask(callback=lambda: self.state.election())
         self.heartbeats = ResetablePeriodicTask(interval=0.05,
                                                 callback=lambda: self.heartbeat(bootstraps=bootstrap))
 
@@ -181,7 +178,6 @@ class RaftServer:
     async def handle_write_command(self, slug, *args, **kwargs):
         if not self.state.is_leader():
             raise NotLeaderException('This server is not a leader')
-        logger.debug('handle_write_command')
         log_entry = self.log.entry(term=self.term, command=slug, args=args, kwargs=kwargs)
 
         command_applied = asyncio.Event()
