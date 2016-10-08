@@ -11,4 +11,6 @@ setup(
     keywords="python raft distributed replication",
     packages=['rafter', ],
     install_requires=open('requirements.txt', 'r').read().splitlines(),
+    use_scm_version=True,
+    setup_requires=['setuptools_scm'],
 )
