@@ -5,7 +5,6 @@ import signal
 import sys
 import random
 import logging
-import pickle
 import os
 import json
 from collections import defaultdict
@@ -42,6 +41,7 @@ class RaftServer:
                  address=('0.0.0.0', 10000),
                  log=None,
                  storage=None,
+                 invocations=None,
                  loop=None,
                  server_protocol=UPDProtocolMsgPackServer,
                  config=None,
@@ -51,6 +51,8 @@ class RaftServer:
 
         self.log = log if log is not None else rlog.RaftLog()
         self.storage = storage or rlog.Storage()
+
+        self.invocations = rlog.AsyncDictWrapper(invocations or {})
 
         self.bootstrap = bootstrap
 
@@ -132,25 +134,24 @@ class RaftServer:
         """Dispatch to the appropriate state method"""
         return getattr(self.state, message_type)(**kwargs)
 
-    async def _apply_single(self, cmd, args, kwargs, index=None):
+    async def _apply_single(self, cmd, invocation_id, args, kwargs, index=None):
 
         try:
-            res = await getattr(self.service, cmd).apply(*args, **kwargs) if cmd else None
+            res = dict(result=await getattr(self.service, cmd).apply(*args, **kwargs) if cmd else None)
+
         except Exception as e:
-            logger.exception('Exception during command invocation')
-            raise
+            logger.exception('Exception during a command invocation')
+            res = dict(error=True, msg=str(e))
 
-        if index is None:
-            return res
-
-        # notify waiting client
-        can_apply = self.pending_events.get(index)
-        if can_apply:
-            can_apply.set()
+        finally:
+            if invocation_id is None:
+                return res['result']
+            await self.invocations.set(invocation_id, res)
 
     def apply_commited(self, start, end):
         return asyncio.ensure_future(asyncio.wait(map(
             lambda entry: asyncio.ensure_future(self._apply_single(entry.command,
+                                                                   entry.uuid,
                                                                    entry.args,
                                                                    entry.kwargs,
                                                                    index=entry.index)),
@@ -188,7 +189,7 @@ class RaftServer:
     async def handle_read_command(self, command, *args, **kwargs):
         if not self.state.is_leader():
             raise NotLeaderException('This server is not a leader')
-        return await self._apply_single(command, args, kwargs)
+        return await self._apply_single(command, None, args, kwargs)
 
     async def send_append_entries(self, entries=(), destination=('239.255.255.250', 10000)):
         prev = self.log[entries[0].index - 1] if entries else None

@@ -3,6 +3,7 @@ import collections
 import itertools
 import json
 from uuid import uuid4
+import asyncio
 
 import lmdb
 from msgpack import packb, unpackb
@@ -163,49 +164,23 @@ class PersistentDict(collections.abc.MutableMapping):
             return txn.stat()['entries']
 
 
+class AsyncDictWrapper:
 
-"""
-async def notify(c):
-    async with c: 
-        c.notify_all()
-n = 0
-
-def wait(c):
-    global n
-    if n >= 4:
-        return n
-    n += 1
-    asyncio.ensure_future(notify(c))
-    return False
-
-async def get_await():
-    c = asyncio.Condition()
-    async with c:
-        print(await c.wait_for(lambda: wait(c)))
-
-import asyncio
-print(asyncio.get_event_loop().run_until_complete(get_await()))
-"""
-import asyncio
-
-
-class AsyncDict(dict):
-
-    def __init__(self, *args, **kwargs, *, loop=None):
-        super().__init__(*args, **kwargs)
+    def __init__(self, d, loop=None):
+        self._d = d
         self._loop = loop or asyncio.get_event_loop()
         self._waiters = collections.defaultdict(lambda: asyncio.Condition(loop=self._loop))
 
     async def wait_for(self, key):
         try:
-            return super().__getitem__(key)
+            return self._d[key]
         except KeyError:
             c = self._waiters[key]
             async with c:
-                return await c.wait_for(lambda: super(self.__class__, self).get(key))
+                return await c.wait_for(lambda: self._d.get(key))
 
     async def set(self, key, value):
         c = self._waiters[key]
         async with c:
-            super().__setitem__(key, value)
+            self._d[key] = value
             c.notify_all()

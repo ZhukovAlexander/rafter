@@ -24,6 +24,7 @@ class KwargsType(types.BaseType):
 class LogEntry(MsgpackModel):
     index = types.IntType()
     term = types.IntType()
+    uuid = types.UUIDType()
     command = types.StringType()
     args = ArgsType()
     kwargs = KwargsType()

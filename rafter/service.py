@@ -27,11 +27,11 @@ class ExposedCommand:
             self._server = instance._server
         return self
 
-    async def __call__(self, *args, **kwargs):
+    async def __call__(self, *args, invocation_id=None, **kwargs):
         if not self._service:
             raise UnboundExposedCommand()
         if self._write:
-            return await self._server.handle_write_command(self.slug, *args, **kwargs)
+            return await self._server.handle_write_command(self.slug, invocation_id, *args, **kwargs)
         return await self._server.handle_read_command(self.slug, *args, **kwargs)
 
     async def apply(self, *args, **kwargs):
@@ -117,8 +117,8 @@ def encode(data):
 class JsonRpcHttpRequestHandler(aiohttp.server.ServerHttpProtocol):
 
     def __init__(self, service, *args, **kwargs):
-        self._service = service
         super().__init__(*args, **kwargs)
+        self._service = service
 
     async def handle_request(self, message, payload):
 

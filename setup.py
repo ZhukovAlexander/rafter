@@ -7,7 +7,6 @@ if sys.version_info < (3, 5):
 
 setup(
     name="rafter",
-    version="0.1.0",
     keywords="python raft distributed replication",
     packages=['rafter', ],
     install_requires=open('requirements.txt', 'r').read().splitlines(),

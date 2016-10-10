@@ -1,6 +1,6 @@
 import unittest
 from unittest import mock
-
+import uuid
 import asyncio
 
 from rafter.server import RaftServer
@@ -51,15 +51,14 @@ class RaftServerTest(unittest.TestCase):
         res = self.server.handle(method)
         getattr(self.server.state, method).assert_called_with()
 
-
     def test_maybe_commit_should_notify_clients(self):
-        entry = LogEntry(dict(index=0, term=self.server.term, command='test', args=(), kwargs={}))
+        entry = LogEntry(dict(index=0, uuid=uuid.uuid4(), term=self.server.term, command='test', args=(), kwargs={}))
         self.server.log.append(entry)
-        self.server.pending_events[entry.index] = asyncio.Event()
+        waiter = asyncio.ensure_future(self.server.invocations.wait_for(entry.uuid))
         res = self.loop.run_until_complete(
             self.server.maybe_commit(self.server.id, self.server.term, entry.index)
         )
-        self.assertTrue(self.server.pending_events[entry.index].is_set())
+        self.assertTrue(self.loop.run_until_complete(waiter))
         self.assertEqual(self.server.log.commit_index, entry.index)
 
     def test_handle_write_command_should_send_append_entries(self):
