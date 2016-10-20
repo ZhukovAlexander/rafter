@@ -103,7 +103,7 @@ class RaftServer:
 
     @property
     def commit_index(self):
-        return self.storate['commit_index']
+        return self.storage['commit_index']
 
     @commit_index.setter
     def commit_index(self, value: int):
