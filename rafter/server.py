@@ -13,7 +13,7 @@ import uvloop
 
 
 from . import server_state
-from . import log as rlog
+from . import storage as storage
 from . import models
 from .network import UPDProtocolMsgPackServer, make_socket, ResetablePeriodicTask
 from .exceptions import NotLeaderException
@@ -49,10 +49,10 @@ class RaftServer:
 
         self.host, self.port = address
 
-        self.log = log if log is not None else rlog.RaftLog()
-        self.storage = storage or rlog.Storage()
+        self.log = log if log is not None else storage.RaftLog()
+        self.storage = storage or storage.Storage()
 
-        self.invocations = rlog.AsyncDictWrapper(invocations or {})
+        self.invocations = storage.AsyncDictWrapper(invocations or {})
 
         self.bootstrap = bootstrap
 

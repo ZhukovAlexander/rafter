@@ -5,7 +5,7 @@ import shutil
 import lmdb
 
 from rafter.models import LogEntry
-from rafter.log import RaftLog, Storage, MetaDataField
+from rafter.storage import RaftLog, Storage, MetaDataField
 
 
 class LMDBLogTest(unittest.TestCase):
