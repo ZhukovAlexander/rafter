@@ -1,7 +1,7 @@
 import unittest
 from unittest import mock
 
-from rafter.server_state import Leader, Follower, Candidate
+from rafter.serverstate import Leader, Follower, Candidate
 from rafter.models import LogEntry
 
 class Server(mock.Mock):

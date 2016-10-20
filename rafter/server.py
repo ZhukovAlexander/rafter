@@ -12,7 +12,7 @@ from collections import defaultdict
 import uvloop
 
 
-from . import server_state
+from . import serverstate
 from . import storage as storage
 from . import models
 from .network import UPDProtocolMsgPackServer, make_socket, ResetablePeriodicTask
@@ -67,7 +67,7 @@ class RaftServer:
         self.loop = loop or asyncio.get_event_loop()
         self.queue = asyncio.Queue(loop=self.loop)
 
-        self.state = server_state.Follower(self, self.log)
+        self.state = serverstate.Follower(self, self.log)
         self.server_protocol = server_protocol(self, self.queue)
         self.service = service(self)
 
