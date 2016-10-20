@@ -5,7 +5,7 @@ import shutil
 import lmdb
 
 from rafter.models import LogEntry
-from rafter.storage import RaftLog, Storage, MetaDataField
+from rafter.storage import RaftLog
 
 
 class LMDBLogTest(unittest.TestCase):
@@ -15,11 +15,6 @@ class LMDBLogTest(unittest.TestCase):
 
     def tearDown(self):
         shutil.rmtree(self.db_dir)
-
-    def test_commit_index(self):
-        self.assertEqual(self.log.commit_index, 0)
-        self.log.commit_index += 1
-        self.assertEqual(self.log.commit_index, 1)
 
     def test_setitem(self):
         entry = LogEntry()
@@ -94,23 +89,3 @@ class LMDBLogTest(unittest.TestCase):
         self.assertFalse(self.log.cmp(entry.index - 1, entry.term - 1))
         self.assertFalse(self.log.cmp(entry.index + 1, entry.term - 1))
         self.assertTrue(self.log.cmp(entry.index - 1, entry.term + 1))
-
-
-class StorageTest(unittest.TestCase):
-
-    def get_storage(self):
-        return Storage(env=lmdb.open(self.db_dir, max_dbs=10))
-
-    def setUp(self):
-        self.db_dir = tempfile.mkdtemp()
-        self.storage = self.get_storage()
-
-    def tearDown(self):
-        shutil.rmtree(self.db_dir)
-
-    def test_medadata_attribute(self):
-        self.assertIsInstance(Storage.id, MetaDataField)
-
-    def test_defaults(self):
-        self.assertEqual(self.storage.term, 0)
-        self.assertEqual(self.storage.id, self.get_storage().id)

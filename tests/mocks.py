@@ -12,10 +12,8 @@ class Log(list):
         return self[-1]
 
 
-class Storage(mock.Mock):
-    term = 0
-    id = 'testserver'
-    peers = {}
+class Storage(dict):
+    pass
 
 async def foo(*args, **kwargs):
     return 'result'

@@ -37,6 +37,7 @@ class RaftServerTest(unittest.TestCase):
     def test_initial_heartbeat_calls_add_peer(self):
         with mock.patch('rafter.server.asyncio.ensure_future') as ensure_future:
             self.server.heartbeat(bootstraps=True)
+
             ensure_future.assert_called_with(self.server.service.add_peer())
 
     def test_heartbeat_should_schedule_ae(self):
@@ -83,7 +84,7 @@ class RaftServerTest(unittest.TestCase):
 
     def test_add_peer(self):
         self.server.add_peer({'id': 'peer-2'})
-        self.assertIn('peer-2', self.server.peers)
+        self.assertIn(b'peer-2', self.server.peers)
 
     def test_remove_peer(self):
         with self.assertRaises(KeyError):

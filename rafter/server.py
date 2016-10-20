@@ -8,15 +8,17 @@ import logging
 import os
 import json
 from collections import defaultdict
+from uuid import uuid4
 
 import uvloop
 
 
 from . import serverstate
-from . import storage as storage
+from . import storage as store
 from . import models
 from .network import UPDProtocolMsgPackServer, make_socket, ResetablePeriodicTask
 from .exceptions import NotLeaderException
+from .utils import AsyncDictWrapper
 
 
 # <http://stackoverflow.com/a/14058475/2183102>
@@ -41,7 +43,6 @@ class RaftServer:
                  address=('0.0.0.0', 10000),
                  log=None,
                  storage=None,
-                 invocations=None,
                  loop=None,
                  server_protocol=UPDProtocolMsgPackServer,
                  config=None,
@@ -49,15 +50,17 @@ class RaftServer:
 
         self.host, self.port = address
 
-        self.log = log if log is not None else storage.RaftLog()
-        self.storage = storage or storage.Storage()
+        self.log = log if log is not None else store.RaftLog()
+        self.storage = storage or store.PersistentDict()
 
-        self.invocations = storage.AsyncDictWrapper(invocations or {})
+        a_wrapper = AsyncDictWrapper(storage or {})
+
+        self.wait_for, self.set_result = a_wrapper.wait_for, a_wrapper.set
 
         self.bootstrap = bootstrap
 
         if self.bootstrap:
-            self.storage.peers = {self.id: {'id': self.id}}
+            self.storage['peers'] = {self.id: {'id': self.id}}
 
         self.match_index = defaultdict(lambda: self.log.commit_index)
         self.next_index = defaultdict(lambda: self.log.commit_index + 1)
@@ -88,27 +91,27 @@ class RaftServer:
 
     @property
     def id(self):  # pragma: nocover
-        return self.storage.id
+        return self.storage.setdefault('id', uuid4().hex)
 
     @property
     def term(self):  # pragma: nocover
-        return self.storage.term
+        return self.storage.setdefault('term', 0)
 
     @term.setter
     def term(self, value):  # pragma: nocover
-        self.storage.term = value
+        self.storage['term'] = value
 
     @property
     def voted_for(self):  # pragma: nocover
-        return self.storage.voted_for
+        return self.storage.get('voted_for')
 
     @voted_for.setter
     def voted_for(self, value):  # pragma: nocover
-        self.storage.voted_for = value
+        self.storage['voted_for'] = value
 
     @property
     def peers(self):  # pragma: nocover
-        return self.storage.peers
+        return self.storage.setdefault('peers', {})
 
     def start(self):
 
@@ -146,7 +149,7 @@ class RaftServer:
         finally:
             if invocation_id is None:
                 return res['result']
-            await self.invocations.set(invocation_id, res)
+            await self.set_result(invocation_id, res)
 
     def apply_commited(self, start, end):
         return asyncio.ensure_future(asyncio.wait(map(
@@ -216,12 +219,12 @@ class RaftServer:
 
     def add_peer(self, peer):
         # <http://stackoverflow.com/a/26853961/2183102>
-        self.storage.peers = {**self.storage.peers, **{peer['id']: peer}}
+        self.storage['peers'] = {**self.storage['peers'], **{peer['id']: peer}}
 
     def remove_peer(self, peer_id):
-        peers = self.storage.peers
+        peers = self.storage['peers']
         del peers[peer_id]
-        self.storage.peers = peers
+        self.storage['peers'] = peers
 
     def list_peers(self):
-        return list(self.storage.peers)
+        return list(self.peers)
