@@ -2,6 +2,7 @@ from abc import ABCMeta, abstractmethod
 import asyncio
 import json
 import logging
+from inspect import isawaitable
 
 import aiohttp
 import aiohttp.server
@@ -36,7 +37,7 @@ class ExposedCommand:
 
     async def apply(self, *args, **kwargs):
         result = self._func(self._service, *args, **kwargs)
-        return await result if asyncio.iscoroutine(result) else result
+        return await result if isawaitable(result) else result
 
 
 def _exposed(write=True, slug=None):
