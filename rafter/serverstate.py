@@ -1,3 +1,9 @@
+"""Contains Raft server state implementations
+
+StateBases instances are used to handle incoming requests as described in the
+original paper.
+"""
+
 import logging
 
 logger = logging.getLogger(__name__)

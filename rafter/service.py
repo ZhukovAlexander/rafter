@@ -1,3 +1,11 @@
+"""Contains a set of Service base classes
+
+Services provide and API to delegate underlying state management
+to the Raft server. This is pretty much the only API that a user
+should interact with, when using rafter.
+
+"""
+
 from abc import ABCMeta, abstractmethod
 import asyncio
 import json

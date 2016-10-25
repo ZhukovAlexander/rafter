@@ -1,3 +1,9 @@
+"""Default persistent data structures
+
+This module provides RaftLog and PersistentDict classes that persist
+their data in LMDB.
+"""
+
 import sys
 import collections
 import itertools

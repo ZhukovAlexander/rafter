@@ -1,3 +1,9 @@
+"""Contains network protocols for rafter
+
+By default rafter uses UDP+multicast on top of the uvloop.
+
+"""
+
 import asyncio
 import socket
 import struct
