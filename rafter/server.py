@@ -102,6 +102,14 @@ class RaftServer:
         self.storage['term'] = value
 
     @property
+    def commit_index(self):
+        return self.storate['commit_index']
+
+    @commit_index.setter
+    def commit_index(self, value: int):
+        self.storage['commit_index'] = value
+
+    @property
     def voted_for(self):  # pragma: nocover
         return self.storage.get('voted_for')
 

@@ -127,13 +127,11 @@ class Follower(StateBase):
         self.log.extend(entries)
         if leader_commit > self.log.commit_index:
             self._server.apply_commited(self.log.commit_index, leader_commit)
-            self.log.commit_index = min(leader_commit, self.log.commit_index)
+            self.log.commit_index = min(leader_commit, self._server.commit_index)
         return dict(index=prev_log_index, term=self._server.term, success=True)
 
     def _request_vote(self, term, peer, last_log_index, last_log_term):
-        if self._server.voted_for in ('', peer) and self.log.cmp(last_log_index, last_log_term):
+        if self._server.voted_for in {'', peer} and self.log.cmp(last_log_index, last_log_term):
             self._server.voted_for = peer
             return dict(term=self._server.term, vote=True, peer=self._server.id)
         return dict(term=self._server.term, vote=False, peer=self._server.id)
-
-# function database
