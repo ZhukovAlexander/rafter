@@ -99,7 +99,7 @@ class TelnetService(BaseService):
 
     _prompt = b'>'
 
-    def __init__(self, host='127.0.0.1', port=8888):
+    def __init__(self, host: str ='127.0.0.1', port: int = 8888):
         super().__init__()
         self.host, self.port = host, port
 

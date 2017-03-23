@@ -9,6 +9,7 @@ import os
 import json
 from collections import defaultdict
 from uuid import uuid4
+import typing
 
 import uvloop
 
@@ -19,6 +20,7 @@ from . import models
 from .network import UPDProtocolMsgPackServer, make_socket, ResetablePeriodicTask
 from .utils import AsyncDictWrapper
 from .exceptions import NotLeaderException
+from .service import BaseService
 
 
 # <http://stackoverflow.com/a/14058475/2183102>
@@ -39,16 +41,17 @@ asyncio.set_event_loop(uvloop.new_event_loop())
 class RaftServer:
 
     def __init__(self,
-                 service,
-                 address=('0.0.0.0', 10000),
-                 log=None,
-                 storage=None,
-                 loop=None,
-                 server_protocol=UPDProtocolMsgPackServer,
-                 config=None,
-                 bootstrap=False):
+                 service: 'BaseService',
+                 host: str = '0.0.0.0',
+                 port: int = 8080,
+                 log: typing.MutableSequence = None,
+                 storage: typing.MutableMapping = None,
+                 loop: asyncio.AbstractEventLoop = None,
+                 server_protocol: typing.Any = UPDProtocolMsgPackServer,
+                 config: dict = None,
+                 bootstrap: bool = False):
 
-        self.host, self.port = address
+        self.host, self.port = host, port
 
         self.log = log if log is not None else store.RaftLog()
         self.storage = storage or store.PersistentDict()
