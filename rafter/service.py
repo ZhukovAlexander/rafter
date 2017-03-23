@@ -44,53 +44,44 @@ class ExposedCommand:
         return await result if isawaitable(result) else result
 
 
-def _exposed(write=True, slug=None):
+def _command(write=True, slug=None):
     def deco(func):
         return ExposedCommand(func, write, slug)
     return deco
 
 
-def exposed(*args, **kwargs):
+def command(*args, **kwargs):
     if len(args) == 1 and callable(args[0]):
-        return _exposed()(args[0])
-    return _exposed(*args, **kwargs)
+        return _command()(args[0])
+    return _command(*args, **kwargs)
 
 
-class ServiceMeta(ABCMeta):
-
-    def __new__(mcs, name, bases, attrs):
-
-        attrs['exposed'] = {v.slug: v for k, v in attrs.items() if isinstance(v, ExposedCommand)}
-
-        return type.__new__(mcs, name, bases, attrs)
-
-
-class BaseService(metaclass=ServiceMeta):
+class BaseService(metaclass=ABCMeta):
 
     server = None
 
-    async def dispatch(self, cmd, *args, **kwargs):
+    async def dispatch(self, name, *args, **kwargs):
         try:
-            command = getattr(self, cmd)
+            cmd = getattr(self, name)
         except AttributeError:
-            raise UnknownCommand('Command not found: {0}'.format(cmd))
+            raise UnknownCommand('Command not found: {0}'.format(name))
         else:
-            if not isinstance(command, ExposedCommand):
-                raise UnknownCommand('Command not found: {0}'.format(cmd))
-        return await command(*args, **kwargs)
+            if not isinstance(cmd, ExposedCommand):
+                raise UnknownCommand('Command not found: {0}'.format(name))
+        return await cmd(*args, **kwargs)
 
     def setup(self, server):
         self.server = server
 
-    @exposed(write=False)
+    @command(write=False)
     def peers(self):  # pragma: nocover
         return self.server.list_peers()
 
-    @exposed
+    @command
     def add_peer(self, peer):  # pragma: nocover
         self.server.add_peer(peer)
 
-    @exposed
+    @command
     def remove_peer(self, peer_id):  # pragma: nocover
         self.server.remove_peer(peer_id)
 
@@ -109,9 +100,9 @@ class TelnetService(BaseService):
         coro = asyncio.start_server(self.handle_echo, self.host, self.port, loop=loop)
         loop.run_until_complete(coro)
 
-    async def execute_command(self, command, args):
+    async def execute_command(self, cmd, args):
         try:
-            result = await self.dispatch(command, *args)
+            result = await self.dispatch(cmd, *args)
         except Exception as e:
             return str(e).encode()
         return result
@@ -131,9 +122,9 @@ class TelnetService(BaseService):
                 writer.write(b'Buy...')
                 running = False
             else:
-                command, *args = message.split()
+                cmd, *args = message.split()
 
-                writer.write(await self.execute_command(command, args))
+                writer.write(await self.execute_command(cmd, args))
             writer.write(b'\n')
             await writer.drain()
 

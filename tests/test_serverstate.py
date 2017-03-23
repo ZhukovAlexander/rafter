@@ -4,11 +4,14 @@ from unittest import mock
 from rafter.serverstate import Leader, Follower, Candidate
 from rafter.models import LogEntry
 
+
 class Server(mock.Mock):
     term = 10
     id = 'server-1'
     voted_for = ''
     peers = {id: {}}
+    commit_index = 0
+
 
 class Log(list):
     commit_index = 0
