@@ -2,4 +2,4 @@ lmdb
 msgpack-python
 schematics
 uvloop
-aiohttp
+

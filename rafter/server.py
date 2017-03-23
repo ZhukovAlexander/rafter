@@ -17,8 +17,8 @@ from . import serverstate
 from . import storage as store
 from . import models
 from .network import UPDProtocolMsgPackServer, make_socket, ResetablePeriodicTask
-from .exceptions import NotLeaderException
 from .utils import AsyncDictWrapper
+from .exceptions import NotLeaderException
 
 
 # <http://stackoverflow.com/a/14058475/2183102>
@@ -72,7 +72,7 @@ class RaftServer:
 
         self.state = serverstate.Follower(self, self.log)
         self.server_protocol = server_protocol(self, self.queue)
-        self.service = service(self)
+        self.service = service
 
         self.election_timer = ResetablePeriodicTask(callback=lambda: self.state.election())
         self.heartbeats = ResetablePeriodicTask(interval=0.05,
@@ -134,7 +134,7 @@ class RaftServer:
         )
 
         self.election_timer.start(random.randint(15, 30) / 100)
-        self.service.setup()
+        self.service.setup(self)
 
     def stop(self, signame):  # pragma: nocover
         logger.info('Got signal {}, exiting...'.format(signame))

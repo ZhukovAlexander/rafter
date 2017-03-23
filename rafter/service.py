@@ -6,16 +6,12 @@ should interact with, when using rafter.
 
 """
 
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta
 import asyncio
-import json
 import logging
 from inspect import isawaitable
 
-import aiohttp
-import aiohttp.server
-
-from .exceptions import NotLeaderException, UnknownCommand, UnboundExposedCommand
+from .exceptions import UnknownCommand, UnboundExposedCommand
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +29,7 @@ class ExposedCommand:
     def __get__(self, instance, owner):
         if instance:
             self._service = instance
-            self._server = instance._server
+            self._server = instance.server
         return self
 
     async def __call__(self, *args, invocation_id=None, **kwargs):
@@ -71,8 +67,7 @@ class ServiceMeta(ABCMeta):
 
 class BaseService(metaclass=ServiceMeta):
 
-    def __init__(self, server):
-        self._server = server
+    server = None
 
     async def dispatch(self, cmd, *args, **kwargs):
         try:
@@ -84,106 +79,63 @@ class BaseService(metaclass=ServiceMeta):
                 raise UnknownCommand('Command not found: {0}'.format(cmd))
         return await command(*args, **kwargs)
 
-    @abstractmethod
-    async def setup(self):  # pragma: nocover
-        raise NotImplementedError
+    def setup(self, server):
+        self.server = server
 
     @exposed(write=False)
     def peers(self):  # pragma: nocover
-        return self._server.list_peers()
+        return self.server.list_peers()
 
     @exposed
     def add_peer(self, peer):  # pragma: nocover
-        self._server.add_peer(peer)
+        self.server.add_peer(peer)
 
     @exposed
     def remove_peer(self, peer_id):  # pragma: nocover
-        self._server.remove_peer(peer_id)
+        self.server.remove_peer(peer_id)
 
 
-PARSE_ERROR = -32700
-INVALID_REQUEST = -32600
-METHOD_NOT_FOUND = -32601
-INVALID_PARAMS = -32602
-INTERNAL_ERROR = -32603
-NOT_A_LEADER = -32000
+class TelnetService(BaseService):
 
-VERSION = '2.0'
+    _prompt = b'>'
 
+    def __init__(self, host='127.0.0.1', port=8888):
+        super().__init__()
+        self.host, self.port = host, port
 
-def is_valid_request(data):
-    return all([
-        'jsonrpc' in data and str(data['jsonrpc']) == VERSION,
-        'method' in data,
-        'params' not in data or isinstance(data['params'], (list, dict))
-    ])
-
-
-def encode(data):
-    return json.dumps(data).encode()
-
-
-class JsonRpcHttpRequestHandler(aiohttp.server.ServerHttpProtocol):
-
-    def __init__(self, service, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._service = service
-
-    async def handle_request(self, message, payload):
-
-        if message.path != '/jsonrpc/method/':  # pragma: nocover
-            # return 404
-            return await super().handle_request(message, payload)
-
-        if message.method != 'POST':
-            http_response = aiohttp.Response(self.writer, 405, http_version=message.version)
-            http_response.send_headers()
-            return await http_response.write_eof()
-
-        http_response = aiohttp.Response(self.writer, 200, http_version=message.version)
-
-        rpc_response = dict(jsonrpc=VERSION)
-        http_response.add_header('Content-Type', 'application/json')
-        # response.add_header('Content-Length', '18')
-        http_response.send_headers()
-
-        try:
-            data = json.loads((await payload.read()).decode())
-        except ValueError as e:
-            rpc_response['error'] = dict(code=PARSE_ERROR, message='Invalid JSON')
-            http_response.write(encode(rpc_response))
-            return await http_response.write_eof()
-
-        rpc_response['id'] = data.get('id', None)
-
-        if not is_valid_request(data):
-            rpc_response['error'] = dict(code=INVALID_REQUEST, message='Invalid JSON-RPC Request object')
-            http_response.write(encode(rpc_response))
-            return await http_response.write_eof()
-        try:
-            params = data.get('params', ())
-            result = await self._service.dispatch(data['method'], *params) \
-                if isinstance(params, (list, tuple)) \
-                else self._service.dispatch(data['method'], **params)
-            rpc_response['result'] = result
-
-        except UnknownCommand as e:
-            rpc_response['error'] = dict(code=METHOD_NOT_FOUND, message=str(e))
-        except NotLeaderException as e:
-            rpc_response['error'] = dict(code=NOT_A_LEADER, message=str(e))
-        except Exception as e:
-            rpc_response['error'] = dict(code=INTERNAL_ERROR, message=str(e))
-            logger.exception('Internal error')
-        finally:
-            http_response.write(encode(rpc_response))
-            await http_response.write_eof()
-
-
-class JsonRPCService(BaseService):
-    def setup(self):
+    def setup(self, server):
+        super().setup(server)
         loop = asyncio.get_event_loop()
-        f = loop.create_server(lambda: JsonRpcHttpRequestHandler(self, debug=True, keep_alive=75),
-                               '0.0.0.0', 
-                               '11111')
-        srv = loop.run_until_complete(f)
-        logger.info('Started serving a JSON-RPC on %s', srv.sockets[0].getsockname())
+        coro = asyncio.start_server(self.handle_echo, self.host, self.port, loop=loop)
+        loop.run_until_complete(coro)
+
+    async def execute_command(self, command, args):
+        try:
+            result = await self.dispatch(command, *args)
+        except Exception as e:
+            return str(e).encode()
+        return result
+
+    async def handle_echo(self, reader, writer):
+        running = True
+        writer.write(b'Hello from rafter!\n')
+        while running:
+            writer.write(self._prompt)
+            data = await reader.read(100)
+            message = data.decode().strip()
+            if not message:
+                continue
+            elif message == 'help':
+                writer.write(b'Type the name of the command followed by the arguments')
+            elif message in ('exit', 'q', 'quit'):
+                writer.write(b'Buy...')
+                running = False
+            else:
+                command, *args = message.split()
+
+                writer.write(await self.execute_command(command, args))
+            writer.write(b'\n')
+            await writer.drain()
+
+            print("Close the client socket")
+        writer.close()
