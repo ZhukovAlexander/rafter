@@ -7,6 +7,7 @@ By default rafter uses UDP+multicast on top of the uvloop.
 import asyncio
 import socket
 import struct
+import abc
 import logging
 
 from . import models
@@ -21,7 +22,57 @@ HANDELERS = {
 }
 
 
-def make_socket(host, port, group='239.255.255.250'):
+class Transport(metaclass=abc.ABCMeta):
+
+    server = None
+
+    def __init__(self):
+        pass
+
+    @abc.abstractmethod
+    def setup(self, server):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def broadcast(self, data):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def send_to(self, data, addres):
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def close(self):
+        raise NotImplementedError
+
+
+class UDPMulticastTransport(Transport):
+
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+
+    def setup(self, server):
+        self.server = server
+        loop = asyncio.get_event_loop()
+        sock = make_udp_multicast_socket(host=self.host, port=self.port)
+        self.queue = asyncio.Queue(loop=loop)
+        self.server_transport, self.server_protocol = loop.run_until_complete(
+            loop.create_datagram_endpoint(
+                lambda: UPDProtocolMsgPackServer(server, self.queue), sock=sock)
+        )
+
+    def broadcast(self, data):
+        asyncio.ensure_future(self.queue.put((data, ('239.255.255.250', 10000))))
+
+    def send_to(self, data, address):
+        self.queue.put((data, address))
+
+    def close(self):
+        pass
+
+
+def make_udp_multicast_socket(host, port, group='239.255.255.250'):
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

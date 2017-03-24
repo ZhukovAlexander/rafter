@@ -17,7 +17,7 @@ import uvloop
 from . import serverstate
 from . import storage as store
 from . import models
-from .network import UPDProtocolMsgPackServer, make_socket, ResetablePeriodicTask
+from .network import UPDProtocolMsgPackServer, ResetablePeriodicTask, UDPMulticastTransport
 from .utils import AsyncDictWrapper
 from .exceptions import NotLeaderException
 from .service import BaseService
@@ -83,6 +83,8 @@ class RaftServer:
 
         self.pending_events = {}
 
+        self.transport = UDPMulticastTransport(self.host, self.port)
+
     def heartbeat(self, bootstraps=False):
         def new_heartbeat(bootstraps=bootstraps):
             asyncio.ensure_future(self.send_append_entries())
@@ -130,18 +132,19 @@ class RaftServer:
             # <http://stackoverflow.com/questions/23313720/asyncio-how-can-coroutines-be-used-in-signal-handlers>
             self.loop.add_signal_handler(getattr(signal, signame), self.stop, signame)
 
-        sock = make_socket(host=self.host, port=self.port)
-        self.server_transport, self.server_protocol = self.loop.run_until_complete(
-            self.loop.create_datagram_endpoint(
-                lambda: self.server_protocol, sock=sock)
-        )
+        # sock = make_socket(host=self.host, port=self.port)
+        # self.server_transport, self.server_protocol = self.loop.run_until_complete(
+        #     self.loop.create_datagram_endpoint(
+        #         lambda: self.server_protocol, sock=sock)
+        # )
 
         self.election_timer.start(random.randint(15, 30) / 100)
         self.service.setup(self)
+        self.transport.setup(self)
 
     def stop(self, signame):  # pragma: nocover
         logger.info('Got signal {}, exiting...'.format(signame))
-        self.server_transport.close()
+        self.transport.close()
         self.loop.stop()
 
     def handle(self, message_type, **kwargs):
@@ -215,7 +218,7 @@ class RaftServer:
             leader_commit=self.log.commit_index,
             entries=entries)
 
-        await self.queue.put((message, destination))
+        return self.transport.broadcast(message)
 
     def broadcast_request_vote(self):
         last = self.log[-1] if len(self.log) > 0 else None
@@ -226,7 +229,7 @@ class RaftServer:
             last_log_term=last.term if last else 0
         )
 
-        return asyncio.ensure_future(self.queue.put((message, ('239.255.255.250', 10000))))
+        return self.transport.broadcast(message)
 
     def add_peer(self, peer):
         # <http://stackoverflow.com/a/26853961/2183102>

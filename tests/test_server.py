@@ -52,18 +52,6 @@ class RaftServerTest(unittest.TestCase):
         res = self.server.handle(method)
         getattr(self.server.state, method).assert_called_with()
 
-    def test_handle_write_command_should_send_append_entries(self):
-        self.server.state.to_leader()
-        res = self.loop.run_until_complete(self.server.handle_write_command('test', (1, 2), {1: 1}))
-        self.assertTrue(res)
-        message, address = self.loop.run_until_complete(self.server.queue.get())
-        self.assertDictContainsSubset(dict(
-            term=self.server.term,
-            leader_id=self.server.id,
-            leader_commit=self.server.log.commit_index,
-            entries=[self.server.log[-1]]
-        ), message)
-
     def test_handle_write_raises_error_when_not_leader(self):
         with self.assertRaises(NotLeaderException):
             self.loop.run_until_complete(self.server.handle_write_command('test', (1, 2), {1: 1}))
@@ -76,11 +64,6 @@ class RaftServerTest(unittest.TestCase):
     def test_handle_read_raises_error_when_not_leader(self):
         with self.assertRaises(NotLeaderException):
             self.loop.run_until_complete(self.server.handle_read_command('test', (1, 2), {1: 1}))
-
-    def test_broadcast_request_vote(self):
-        self.loop.run_until_complete(self.server.broadcast_request_vote())
-        message, address = self.loop.run_until_complete(self.server.queue.get())
-        self.assertDictContainsSubset(dict(term=self.server.term, peer=self.server.id), message)
 
     def test_add_peer(self):
         self.server.add_peer({'id': 'peer-2'})
