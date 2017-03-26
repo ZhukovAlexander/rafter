@@ -42,19 +42,18 @@ class RaftServer:
 
     def __init__(self,
                  service: 'BaseService',
-                 host: str = '0.0.0.0',
-                 port: int = 8080,
                  log: typing.MutableSequence = None,
                  storage: typing.MutableMapping = None,
                  loop: asyncio.AbstractEventLoop = None,
-                 server_protocol: typing.Any = UPDProtocolMsgPackServer,
+                 transport: 'UDPMulticastTransport' = None,
                  config: dict = None,
                  bootstrap: bool = False):
 
-        self.host, self.port = host, port
-
+        self.service = service
         self.log = log if log is not None else store.RaftLog()
-        self.storage = storage or store.PersistentDict()
+        self.storage = storage if storage is not None else store.PersistentDict()
+        self.transport = transport if transport is not None else UDPMulticastTransport()
+        self.config = config if config is not None else {}
 
         a_wrapper = AsyncDictWrapper(storage or {})
 
@@ -68,22 +67,16 @@ class RaftServer:
         self.match_index = defaultdict(lambda: self.log.commit_index)
         self.next_index = defaultdict(lambda: self.log.commit_index + 1)
 
-        self.config = config
-
         self.loop = loop or asyncio.get_event_loop()
         self.queue = asyncio.Queue(loop=self.loop)
 
         self.state = serverstate.Follower(self, self.log)
-        self.server_protocol = server_protocol(self, self.queue)
-        self.service = service
 
         self.election_timer = ResetablePeriodicTask(callback=lambda: self.state.election())
         self.heartbeats = ResetablePeriodicTask(interval=0.05,
                                                 callback=lambda: self.heartbeat(bootstraps=bootstrap))
 
         self.pending_events = {}
-
-        self.transport = UDPMulticastTransport(self.host, self.port)
 
     def heartbeat(self, bootstraps=False):
         def new_heartbeat(bootstraps=bootstraps):
@@ -131,12 +124,6 @@ class RaftServer:
         for signame in ('SIGINT', 'SIGTERM'):
             # <http://stackoverflow.com/questions/23313720/asyncio-how-can-coroutines-be-used-in-signal-handlers>
             self.loop.add_signal_handler(getattr(signal, signame), self.stop, signame)
-
-        # sock = make_socket(host=self.host, port=self.port)
-        # self.server_transport, self.server_protocol = self.loop.run_until_complete(
-        #     self.loop.create_datagram_endpoint(
-        #         lambda: self.server_protocol, sock=sock)
-        # )
 
         self.election_timer.start(random.randint(15, 30) / 100)
         self.service.setup(self)

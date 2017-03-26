@@ -48,7 +48,7 @@ class Transport(metaclass=abc.ABCMeta):
 
 class UDPMulticastTransport(Transport):
 
-    def __init__(self, host, port):
+    def __init__(self, host='0.0.0.0', port=8080):
         self.host = host
         self.port = port
 
