@@ -2,8 +2,8 @@ import sys
 import asyncio
 from optparse import OptionParser
 
-from rafter.service import TelnetService
-from rafter.server import RaftServer
+from rafter import TelnetService
+from rafter import RaftServer
 
 
 if __name__ == '__main__':
