@@ -59,17 +59,20 @@ class Transport(metaclass=abc.ABCMeta):
     def close(self):
         raise NotImplementedError
 
+MCAST_GROUP_IPV6 = 'ff15:7079:7468:6f6e:6465:6d6f:6d63:6173'
+
 
 class UDPMulticastTransport(Transport):
 
-    def __init__(self, host='0.0.0.0', port=10000):
+    def __init__(self, host='0.0.0.0', port=10000, multicast_group=MCAST_GROUP_IPV6):
         self.host = host
         self.port = port
+        self.multicast_group = multicast_group
 
     def setup(self, server):
         self.server = server
         loop = asyncio.get_event_loop()
-        sock = make_udp_multicast_socket(host=self.host, port=self.port)
+        sock = make_udp_multicast_socket(host=self.host, port=self.port, group=self.multicast_group)
         self.queue = asyncio.Queue(loop=loop)
         self.server_transport, self.server_protocol = loop.run_until_complete(
             loop.create_datagram_endpoint(
@@ -77,7 +80,7 @@ class UDPMulticastTransport(Transport):
         )
 
     def broadcast(self, data):
-        asyncio.ensure_future(self.queue.put((data, ('239.255.255.250', 10000))))
+        asyncio.ensure_future(self.queue.put((data, (self.multicast_group, 10000))))
 
     def send_to(self, data, address):
         self.queue.put((data, address))
@@ -86,18 +89,31 @@ class UDPMulticastTransport(Transport):
         pass
 
 
-def make_udp_multicast_socket(host, port, group='239.255.255.250'):
+def make_udp_multicast_socket(host, port, group=MCAST_GROUP_IPV6):
+    """
+    Create a UDP socket for sending and receiving multicast packets
+       See https://github.com/python/cpython/blob/master/Tools/demo/mcast.py
+    """
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    addrinfo = socket.getaddrinfo(group, None)[0]
+
+    sock = socket.socket(addrinfo[0], socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
     except AttributeError:  # pragma: nocover
         pass  # Some systems don't support SO_REUSEPORT
-    sock.bind((host, port))
-    group = socket.inet_aton(group)
-    mreq = struct.pack('4sL', group, socket.INADDR_ANY)
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+    sock.bind(('', port))
+    group_bin = socket.inet_pton(addrinfo[0], addrinfo[4][0])
+    # Join group
+    if addrinfo[0] == socket.AF_INET:  # IPv4
+        sock.setsockopt(socket.IPPROTO_IP,
+                        socket.IP_ADD_MEMBERSHIP,
+                        group_bin + struct.pack('=I', socket.INADDR_ANY))
+    else:
+        sock.setsockopt(socket.IPPROTO_IPV6,
+                        socket.IPV6_JOIN_GROUP,
+                        group_bin + struct.pack('@I', 0))
 
     return sock
 
