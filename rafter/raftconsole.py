@@ -1,4 +1,4 @@
-# Inspired by similar code by Jeff Epler and Fredrik Lundh.
+# Based on the code.py python module
 
 
 import sys
@@ -191,11 +191,20 @@ class InteractiveConsole(InteractiveInterpreter):
         of the input stream; it will show up in tracebacks.
 
         """
+        if locals is not None:
+            locals.update({'exit': self.exit})
+        else:
+            locals = {'exit': self.exit}
         InteractiveInterpreter.__init__(self, locals)
         self.filename = filename
         self.resetbuffer()
         self.host = host
         self.port = port
+
+        self.do_exit = False
+
+    def exit(self):
+        self.do_exit = True
 
     def resetbuffer(self):
         """Reset the input buffer."""
@@ -231,7 +240,7 @@ class InteractiveConsole(InteractiveInterpreter):
         cprt = 'Type "help", "copyright", "credits" or "license" for more information.'
 
         more = 0
-        while 1:
+        while not self.do_exit:
             try:
                 if more:
                     prompt = sys.ps2
@@ -252,6 +261,7 @@ class InteractiveConsole(InteractiveInterpreter):
             await self.write('now exiting %s...\n' % self.__class__.__name__)
         elif exitmsg != '':
             await self.write('%s\n' % exitmsg)
+        self.writer.close()
 
     async def write(self, data):
         self.writer.write(data.encode())
