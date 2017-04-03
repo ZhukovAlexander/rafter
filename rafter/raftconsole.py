@@ -3,12 +3,31 @@
 
 import sys
 import traceback
+import io
+import contextlib
 import argparse
 from codeop import CommandCompiler, compile_command
 import asyncio
 
 __all__ = ["InteractiveInterpreter", "InteractiveConsole", "interact",
            "compile_command"]
+
+
+@contextlib.contextmanager
+def stdoutIO(stdout=None):
+    """
+    Patch stdout to temporary redirect and capture the output of
+    some code block.
+    Based on this answer from SO: 
+        http://stackoverflow.com/a/3906390/2183102
+    """
+    old = sys.stdout
+    if stdout is None:
+        stdout = io.StringIO()
+    sys.stdout = stdout
+    yield stdout
+    sys.stdout = old
+
 
 class InteractiveInterpreter:
     """Base class for InteractiveConsole.
@@ -85,7 +104,9 @@ class InteractiveInterpreter:
 
         """
         try:
-            exec(code, self.locals)
+            with stdoutIO() as s:
+                exec(code, self.locals)
+            await self.write(s.getvalue())
         except SystemExit:
             raise
         except:
