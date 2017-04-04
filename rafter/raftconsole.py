@@ -5,6 +5,7 @@ import sys
 import traceback
 import io
 import contextlib
+import functools
 import argparse
 from codeop import CommandCompiler, compile_command
 import asyncio
@@ -12,6 +13,7 @@ import asyncio
 __all__ = ["InteractiveInterpreter", "InteractiveConsole", "interact",
            "compile_command"]
 
+_exit = exit
 
 @contextlib.contextmanager
 def stdoutIO(stdout=None):
@@ -172,6 +174,17 @@ class InteractiveInterpreter:
         self.writer.write(data.encode())
         await self.writer.drain()
 
+_DO_EXIT = False
+
+
+class Exit:
+    def __call__(self):
+        global _DO_EXIT
+        _DO_EXIT = True
+
+    def __repr__(self):
+        return exit.__repr__()
+
 
 class InteractiveConsole(InteractiveInterpreter):
     """Closely emulate the behavior of the interactive Python interpreter.
@@ -191,10 +204,12 @@ class InteractiveConsole(InteractiveInterpreter):
         of the input stream; it will show up in tracebacks.
 
         """
+        exit = quit = Exit()
+        add_locals = {'exit': exit, 'quit': quit}
         if locals is not None:
-            locals.update({'exit': self.exit})
+            locals.update(add_locals)
         else:
-            locals = {'exit': self.exit}
+            locals = add_locals
         InteractiveInterpreter.__init__(self, locals)
         self.filename = filename
         self.resetbuffer()
@@ -202,9 +217,6 @@ class InteractiveConsole(InteractiveInterpreter):
         self.port = port
 
         self.do_exit = False
-
-    def exit(self):
-        self.do_exit = True
 
     def resetbuffer(self):
         """Reset the input buffer."""
@@ -240,7 +252,7 @@ class InteractiveConsole(InteractiveInterpreter):
         cprt = 'Type "help", "copyright", "credits" or "license" for more information.'
 
         more = 0
-        while not self.do_exit:
+        while not _DO_EXIT:
             try:
                 if more:
                     prompt = sys.ps2
