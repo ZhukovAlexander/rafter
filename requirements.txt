@@ -1,5 +1,4 @@
 lmdb
 msgpack-python
 schematics
-uvloop
 
