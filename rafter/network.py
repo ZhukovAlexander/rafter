@@ -24,6 +24,8 @@ import struct
 import abc
 import logging
 
+import aiozmq
+
 from . import models
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,7 @@ HANDELERS = {
 }
 
 
-class Transport(metaclass=abc.ABCMeta):
+class BaseTransport(metaclass=abc.ABCMeta):
 
     server = None
 
@@ -62,9 +64,10 @@ class Transport(metaclass=abc.ABCMeta):
 MCAST_GROUP_IPV6 = 'ff15:7079:7468:6f6e:6465:6d6f:6d63:6173'
 
 
-class UDPMulticastTransport(Transport):
+class UDPMulticastTransport(BaseTransport):
 
     def __init__(self, host='0.0.0.0', port=10000, multicast_group=MCAST_GROUP_IPV6):
+        super().__init__()
         self.host = host
         self.port = port
         self.multicast_group = multicast_group
@@ -147,6 +150,88 @@ class UPDProtocolMsgPackServer:
 
     def connection_lost(self, exc):  # pragma: nocover
         logger.info('Closing server transport at {}:{}'.format(*self.transport.get_extra_info('sockname')))
+
+
+class ZmqPublisherProtocol(aiozmq.ZmqProtocol):
+
+    transport = None
+
+    def __init__(self, queue, on_close):
+        self.closed = False
+        self.queue = queue
+        self.on_close = on_close
+
+    def connection_made(self, transport):
+        self.transport = transport
+        asyncio.ensure_future(self.start())
+
+    async def start(self):
+        while not self.closed:
+            data, topic = await self.queue.get()
+
+            self.transport.write([topic.encode(), data.encode()])
+
+    def connection_lost(self, exc):
+        self.on_close.set_result(exc)
+        self.closed = True
+
+
+class ZmqSubProtocol(aiozmq.ZmqProtocol):
+
+    transport = None
+
+    def __init__(self, on_close):
+        self.on_close = on_close
+
+    def connection_made(self, transport):
+        self.transport = transport
+
+    def msg_received(self, msg):
+        content = models.RaftMessage.unpack(msg).content
+        handler, resp_class = HANDELERS[type(content)]
+        result = self.server.handle(handler, **content.to_native())
+
+        if resp_class is not None and result:
+            pass
+
+    def connection_lost(self, exc):
+        self.on_close.set_result(exc)
+
+
+class ZMQTransport(BaseTransport):
+
+    TOPIC = b'_RAFTER'
+
+    def __init__(self, host='127.0.0.1', port=9999):
+        super().__init__()
+        self.host = host
+        self.port = port
+        self.queue = asyncio.Queue()
+
+    def setup(self, server):
+        loop = asyncio.get_event_loop()
+        pub_closed = asyncio.Future()
+        sub_closed = asyncio.Future()
+
+        publisher, _ = loop.run_until_complete(aiozmq.create_zmq_connection(
+            lambda: ZmqPublisherProtocol(queue=self.queue, on_close=pub_closed),
+            aiozmq.zmq.PUB,
+            bind='tcp://{host}:{port}'.format(host=self.host, port=self.port)))
+
+        subscriber, _ = loop.run_until_complete(aiozmq.create_zmq_connection(
+            lambda: ZmqSubProtocol(sub_closed),
+            aiozmq.zmq.SUB))
+
+        subscriber.subscribe(self.TOPIC)
+
+    def broadcast(self, data):
+        asyncio.ensure_future(self.queue.put((self.TOPIC, data)))
+
+    def send_to(self, data, address):
+        raise NotImplementedError
+
+    def close(self):
+        pass
 
 
 class ResetablePeriodicTask:
