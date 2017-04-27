@@ -76,17 +76,17 @@ class UDPMulticastTransport(BaseTransport):
         self.server = server
         loop = asyncio.get_event_loop()
         sock = make_udp_multicast_socket(host=self.host, port=self.port, group=self.multicast_group)
-        self.queue = asyncio.Queue(loop=loop)
         self.server_transport, self.server_protocol = loop.run_until_complete(
             loop.create_datagram_endpoint(
                 lambda: UPDProtocolMsgPackServer(server, self.queue), sock=sock)
         )
 
     def broadcast(self, data):
-        asyncio.ensure_future(self.queue.put((data, (self.multicast_group, 10000))))
+        data = models.RaftMessage({'content': data}).pack()
+        self.server_transport.sendto(data, (self.multicast_group, 10000))
 
     def send_to(self, data, address):
-        self.queue.put((data, address))
+        self.server_transport.sendto(data, address)
 
     def close(self):
         pass
