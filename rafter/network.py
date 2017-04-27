@@ -163,13 +163,6 @@ class ZmqPublisherProtocol(aiozmq.ZmqProtocol):
 
     def connection_made(self, transport):
         self.transport = transport
-        asyncio.ensure_future(self.start())
-
-    async def start(self):
-        while not self.closed:
-            data, topic = await self.queue.get()
-
-            self.transport.write([topic.encode(), data.encode()])
 
     def connection_lost(self, exc):
         self.on_close.set_result(exc)
@@ -201,34 +194,40 @@ class ZmqSubProtocol(aiozmq.ZmqProtocol):
 class ZMQTransport(BaseTransport):
 
     TOPIC = b'_RAFTER'
+    OWN_TOPIC_TEMPLATE = '_PEER:{}'
 
-    def __init__(self, host='127.0.0.1', port=9999):
+    def __init__(self, host='::1', port=9999):
         super().__init__()
         self.host = host
         self.port = port
         self.queue = asyncio.Queue()
+
+    @property
+    def _own_topic(self):
+        return self.OWN_TOPIC_TEMPLATE.format(self.server.id)
 
     def setup(self, server):
         loop = asyncio.get_event_loop()
         pub_closed = asyncio.Future()
         sub_closed = asyncio.Future()
 
-        publisher, _ = loop.run_until_complete(aiozmq.create_zmq_connection(
+        self.publisher, _ = loop.run_until_complete(aiozmq.create_zmq_connection(
             lambda: ZmqPublisherProtocol(queue=self.queue, on_close=pub_closed),
             aiozmq.zmq.PUB,
             bind='tcp://{host}:{port}'.format(host=self.host, port=self.port)))
 
-        subscriber, _ = loop.run_until_complete(aiozmq.create_zmq_connection(
+        self.subscriber, _ = loop.run_until_complete(aiozmq.create_zmq_connection(
             lambda: ZmqSubProtocol(sub_closed),
             aiozmq.zmq.SUB))
 
         subscriber.subscribe(self.TOPIC)
+        subscriber.subscribe(self._own_topic)
 
     def broadcast(self, data):
-        asyncio.ensure_future(self.queue.put((self.TOPIC, data)))
+        self.publisher.write([self.TOPIC, data])
 
     def send_to(self, data, address):
-        raise NotImplementedError
+        self.publisher.write([address, data])
 
     def close(self):
         pass
