@@ -79,7 +79,7 @@ class RaftServer:
         self.bootstrap = bootstrap
 
         if self.bootstrap:
-            self.storage['peers'] = {self.id: {'id': self.id}}
+            self.storage['peers'] = {self.id: {'id': self.id, 'address': self.transport.address}}
 
         self.match_index = defaultdict(lambda: self.log.commit_index)
         self.next_index = defaultdict(lambda: self.log.commit_index + 1)

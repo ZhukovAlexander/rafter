@@ -111,8 +111,8 @@ class TelnetService(BaseService):
     def setup(self, server):
         super().setup(server)
         loop = asyncio.get_event_loop()
-        coro = asyncio.start_server(self.handle_echo, self.host, self.port, loop=loop)
-        loop.run_until_complete(coro)
+        # coro = asyncio.start_server(self.handle_echo, self.host, self.port, loop=loop)
+        # loop.run_until_complete(coro)
 
     async def execute_command(self, cmd, args):
         try:

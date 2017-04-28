@@ -156,9 +156,8 @@ class ZmqPublisherProtocol(aiozmq.ZmqProtocol):
 
     transport = None
 
-    def __init__(self, queue, on_close):
+    def __init__(self, on_close):
         self.closed = False
-        self.queue = queue
         self.on_close = on_close
 
     def connection_made(self, transport):
@@ -194,40 +193,54 @@ class ZmqSubProtocol(aiozmq.ZmqProtocol):
 class ZMQTransport(BaseTransport):
 
     TOPIC = b'_RAFTER'
-    OWN_TOPIC_TEMPLATE = '_PEER:{}'
 
     def __init__(self, host='::1', port=9999):
         super().__init__()
         self.host = host
         self.port = port
-        self.queue = asyncio.Queue()
+        self.address = 'tcp://[{host}]:{port}'.format(host=host, port=port)
 
-    @property
-    def _own_topic(self):
-        return self.OWN_TOPIC_TEMPLATE.format(self.server.id)
+    async def _setup(self, server):
+        pub_closed = asyncio.Future()
+        sub_closed = asyncio.Future()
+        loop = asyncio.get_event_loop()
+
+        addrinfo = await loop.getaddrinfo(self.host, self.port)
+        is_ipv6 = addrinfo[0][0] == socket.AF_INET6
+
+        self.publisher, _ = await aiozmq.create_zmq_connection(
+            lambda: ZmqPublisherProtocol(on_close=pub_closed),
+            aiozmq.zmq.PUB)
+
+        if is_ipv6:
+            self.publisher.setsockopt(aiozmq.zmq.IPV6, 1)
+
+        await self.publisher.bind('tcp://[{host}]:{port}'.format(host=self.host, port=self.port))
+
+        self.subscriber, _ = await aiozmq.create_zmq_connection(
+            lambda: ZmqSubProtocol(sub_closed),
+            aiozmq.zmq.SUB)
+
+        if is_ipv6:
+            self.subscriber.setsockopt(aiozmq.zmq.IPV6, 1)
+
+        for peer in server.peers.values():
+            print(peer)
+            if not peer[b'id'] == server.id:
+                await self.subscriber.connect(peer['address'])
+
+        self.subscriber.subscribe(self.TOPIC)
+        self.subscriber.subscribe(server.id)
 
     def setup(self, server):
         loop = asyncio.get_event_loop()
-        pub_closed = asyncio.Future()
-        sub_closed = asyncio.Future()
-
-        self.publisher, _ = loop.run_until_complete(aiozmq.create_zmq_connection(
-            lambda: ZmqPublisherProtocol(queue=self.queue, on_close=pub_closed),
-            aiozmq.zmq.PUB,
-            bind='tcp://{host}:{port}'.format(host=self.host, port=self.port)))
-
-        self.subscriber, _ = loop.run_until_complete(aiozmq.create_zmq_connection(
-            lambda: ZmqSubProtocol(sub_closed),
-            aiozmq.zmq.SUB))
-
-        subscriber.subscribe(self.TOPIC)
-        subscriber.subscribe(self._own_topic)
+        loop.run_until_complete(self._setup(server))
 
     def broadcast(self, data):
-        self.publisher.write([self.TOPIC, data])
+        self.publisher.write([self.TOPIC, models.RaftMessage({'content': data}).pack()])
 
     def send_to(self, data, address):
-        self.publisher.write([address, data])
+        self.publisher.write([address, models.RaftMessage({'content': data}).pack()])
 
     def close(self):
         pass
