@@ -66,7 +66,7 @@ MCAST_GROUP_IPV6 = 'ff15:7079:7468:6f6e:6465:6d6f:6d63:6173'
 
 class UDPMulticastTransport(BaseTransport):
 
-    def __init__(self, host='0.0.0.0', port=10000, multicast_group=MCAST_GROUP_IPV6):
+    def __init__(self, host='0.0.0.0', port=10000, multicast_group='224.0.0.1'):
         super().__init__()
         self.host = host
         self.port = port
@@ -78,7 +78,7 @@ class UDPMulticastTransport(BaseTransport):
         sock = make_udp_multicast_socket(host=self.host, port=self.port, group=self.multicast_group)
         self.server_transport, self.server_protocol = loop.run_until_complete(
             loop.create_datagram_endpoint(
-                lambda: UPDProtocolMsgPackServer(server, self.queue), sock=sock)
+                lambda: UPDProtocolMsgPackServer(server), sock=sock)
         )
 
     def broadcast(self, data):
@@ -123,9 +123,8 @@ def make_udp_multicast_socket(host, port, group=MCAST_GROUP_IPV6):
 
 class UPDProtocolMsgPackServer:
 
-    def __init__(self, server, queue):
+    def __init__(self, server):
         self.server = server
-        self.queue = queue
 
     def connection_made(self, transport):
         self.transport = transport
@@ -194,7 +193,7 @@ class ZMQTransport(BaseTransport):
 
     TOPIC = b'_RAFTER'
 
-    def __init__(self, host='::1', port=9999):
+    def __init__(self, host='127.0.0.1', port=9999):
         super().__init__()
         self.host = host
         self.port = port

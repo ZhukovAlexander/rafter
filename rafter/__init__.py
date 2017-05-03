@@ -14,5 +14,5 @@
 
 from .server import RaftServer
 from .storage import PersistentDict, RaftLog
-from .service import BaseService, TelnetService, command
+from .service import BaseService, TelnetService, SSHService, command
 from .network import UDPMulticastTransport

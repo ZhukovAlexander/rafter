@@ -25,6 +25,9 @@ import asyncio
 import logging
 from inspect import isawaitable
 
+import asyncssh
+import crypt
+
 from .exceptions import UnknownCommand, UnboundExposedCommand
 
 logger = logging.getLogger(__name__)
@@ -144,3 +147,71 @@ class TelnetService(BaseService):
 
             print("Close the client socket")
         writer.close()
+
+passwords = {'rafter': 'rafter'}
+
+
+class MySSHServer(asyncssh.SSHServer):
+    def connection_made(self, conn):
+        print('SSH connection received from %s.' %
+              conn.get_extra_info('peername')[0])
+
+    def connection_lost(self, exc):
+        if exc:
+            print('SSH connection error: ' + str(exc), file=sys.stderr)
+        else:
+            print('SSH connection closed.')
+
+    def begin_auth(self, username):
+        # If the user's password is the empty string, no auth is required
+        return passwords.get(username) != ''
+
+    def password_auth_supported(self):
+        return True
+
+    def validate_password(self, username, password):
+        pw = passwords.get(username, '*')
+        return crypt.crypt(password, pw) == pw
+
+
+class SSHService(BaseService):
+    def __init__(self, host: str ='127.0.0.1', port: int = 8022):
+        super().__init__()
+        self.host, self.port = host, port
+
+    def setup(self, server):
+        super().setup(server)
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.start_server())
+
+    async def execute_command(self, cmd, args):
+        try:
+            result = await self.dispatch(cmd, *args)
+        except Exception as e:
+            return str(e).encode()
+        return result
+
+    async def start_server(self):
+        await asyncssh.create_server(MySSHServer, '', 8022, session_factory=self.handle_session)
+
+    async def handle_session(self, stdin, stdout, stderr):
+        stdout.write('Hello from rafter!\n')
+
+        try:
+            async for line in stdin:
+                line = line.rstrip('\n')
+                if line:
+                    if line == 'help':
+                        stdout.write(b'Type the name of the command followed by the arguments')
+                    elif line in ('exit', 'q', 'quit'):
+                        break
+                    else:
+                        cmd, *args = line.split()
+                        stdout.write(await self.execute_command(cmd, args))
+
+        except asyncssh.BreakReceived:
+            pass
+
+        stdout.write('Buy...')
+        stdout.channel.exit(0)
+
