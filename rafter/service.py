@@ -95,7 +95,7 @@ class BaseService(metaclass=ABCMeta):
         return self.server.list_peers()
 
     @command
-    def add_peer(self, peer):  # pragma: nocover
+    async def add_peer(self, peer):  # pragma: nocover
         self.server.add_peer(peer)
 
     @command

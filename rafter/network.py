@@ -54,6 +54,10 @@ class BaseTransport(metaclass=abc.ABCMeta):
         raise NotImplementedError
 
     @abc.abstractmethod
+    async def add_peer(self, peer):
+        raise NotImplementedError
+
+    @abc.abstractmethod
     def send_to(self, data, addres):
         raise NotImplementedError
 
@@ -80,6 +84,9 @@ class UDPMulticastTransport(BaseTransport):
             loop.create_datagram_endpoint(
                 lambda: UPDProtocolMsgPackServer(server), sock=sock)
         )
+
+    async def add_peer(self, peer):
+        "Does nothing"
 
     def broadcast(self, data):
         data = models.RaftMessage({'content': data}).pack()
@@ -224,7 +231,6 @@ class ZMQTransport(BaseTransport):
             self.subscriber.setsockopt(aiozmq.zmq.IPV6, 1)
 
         for peer in server.peers.values():
-            print(peer)
             if not peer[b'id'] == server.id:
                 await self.subscriber.connect(peer['address'])
 
@@ -234,6 +240,9 @@ class ZMQTransport(BaseTransport):
     def setup(self, server):
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self._setup(server))
+
+    async def add_peer(self, peer):
+        await self.subscriber.connect(peer['address'])
 
     def broadcast(self, data):
         self.publisher.write([self.TOPIC, models.RaftMessage({'content': data}).pack()])

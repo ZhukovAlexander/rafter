@@ -235,9 +235,10 @@ class RaftServer:
 
         return self.transport.broadcast(message)
 
-    def add_peer(self, peer):
+    async def add_peer(self, peer):
         # <http://stackoverflow.com/a/26853961/2183102>
         self.storage['peers'] = {**self.storage['peers'], **{peer['id']: peer}}
+        await self.transport.add_peer(peer)
 
     def remove_peer(self, peer_id):
         peers = self.storage['peers']
