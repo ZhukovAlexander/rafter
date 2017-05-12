@@ -53,7 +53,7 @@ class StateBase:
 
     def append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
         if term < self._server.term:
-            return dict(peer=self._server.id, index=self.log.commit_index, term=self._server.term, success=False)
+            return dict(peer=self._server.id, index=self._server.commit_index, term=self._server.term, success=False)
         if not entries:  # heartbeat
             self._server.election_timer.reset()
         else:

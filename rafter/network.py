@@ -70,19 +70,19 @@ MCAST_GROUP_IPV6 = 'ff15:7079:7468:6f6e:6465:6d6f:6d63:6173'
 
 class UDPMulticastTransport(BaseTransport):
 
-    def __init__(self, host='0.0.0.0', port=10000, multicast_group='224.0.0.1'):
+    def __init__(self, host='::', port=10000, multicast_group=MCAST_GROUP_IPV6):
         super().__init__()
         self.host = host
         self.port = port
+        self.address = '{}:{}'.format(self.host, self.port)
         self.multicast_group = multicast_group
 
-    def setup(self, server):
+    async def setup(self, server):
         self.server = server
         loop = asyncio.get_event_loop()
         sock = make_udp_multicast_socket(host=self.host, port=self.port, group=self.multicast_group)
-        self.server_transport, self.server_protocol = loop.run_until_complete(
-            loop.create_datagram_endpoint(
-                lambda: UPDProtocolMsgPackServer(server), sock=sock)
+        self.server_transport, self.server_protocol = await loop.create_datagram_endpoint(
+            lambda: UPDProtocolMsgPackServer(server), sock=sock
         )
 
     async def add_peer(self, peer):
@@ -90,7 +90,7 @@ class UDPMulticastTransport(BaseTransport):
 
     def broadcast(self, data):
         data = models.RaftMessage({'content': data}).pack()
-        self.server_transport.sendto(data, (self.multicast_group, 10000))
+        self.server_transport.sendto(data, (self.multicast_group, self.port))
 
     def send_to(self, data, address):
         self.server_transport.sendto(data, address)
@@ -136,23 +136,11 @@ class UPDProtocolMsgPackServer:
     def connection_made(self, transport):
         self.transport = transport
 
-        asyncio.ensure_future(self.start())
-
-    async def start(self):
-        while not self.transport.is_closing():
-            data, dest = await self.queue.get()
-            logger.debug('Sending %s to %s', data, dest)
-            self.transport.sendto(models.RaftMessage({'content': data}).pack(), dest)
-
     def datagram_received(self, data, addr):
         content = models.RaftMessage.unpack(data).content
         logger.info('Received data: %s from %s', content.to_native(), addr)
         handler, resp_class = HANDELERS[type(content)]
-        result = self.server.handle(handler, **content.to_native())
-
-        if resp_class is not None and result:
-            logger.debug('Sending %s to %s', result, addr)
-            self.transport.sendto(models.RaftMessage({'content': result}).pack(), addr)
+        self.server.handle(handler, content.get('leader_id', content.get('peer')), **content.to_native())
 
     def connection_lost(self, exc):  # pragma: nocover
         logger.info('Closing server transport at {}:{}'.format(*self.transport.get_extra_info('sockname')))
@@ -178,19 +166,18 @@ class ZmqSubProtocol(aiozmq.ZmqProtocol):
 
     transport = None
 
-    def __init__(self, on_close):
+    def __init__(self, server, on_close):
+        self.server = server
         self.on_close = on_close
 
     def connection_made(self, transport):
         self.transport = transport
 
     def msg_received(self, msg):
-        content = models.RaftMessage.unpack(msg).content
+        topic, data = msg
+        content = models.RaftMessage.unpack(data).content
         handler, resp_class = HANDELERS[type(content)]
-        result = self.server.handle(handler, **content.to_native())
-
-        if resp_class is not None and result:
-            pass
+        self.server.handle(handler, content.get('peer', content.get('leader_id', content.get('peer'))), **content.to_native())
 
     def connection_lost(self, exc):
         self.on_close.set_result(exc)
@@ -200,46 +187,40 @@ class ZMQTransport(BaseTransport):
 
     TOPIC = b'_RAFTER'
 
-    def __init__(self, host='127.0.0.1', port=9999):
+    def __init__(self, host='::', port=9999):
         super().__init__()
         self.host = host
         self.port = port
         self.address = 'tcp://[{host}]:{port}'.format(host=host, port=port)
 
-    async def _setup(self, server):
+    async def setup(self, server, loop):
         pub_closed = asyncio.Future()
         sub_closed = asyncio.Future()
-        loop = asyncio.get_event_loop()
 
         addrinfo = await loop.getaddrinfo(self.host, self.port)
         is_ipv6 = addrinfo[0][0] == socket.AF_INET6
 
         self.publisher, _ = await aiozmq.create_zmq_connection(
             lambda: ZmqPublisherProtocol(on_close=pub_closed),
-            aiozmq.zmq.PUB)
+            aiozmq.zmq.PUB, loop=loop)
 
         if is_ipv6:
             self.publisher.setsockopt(aiozmq.zmq.IPV6, 1)
 
-        await self.publisher.bind('tcp://[{host}]:{port}'.format(host=self.host, port=self.port))
+        await self.publisher.bind(self.address)
 
         self.subscriber, _ = await aiozmq.create_zmq_connection(
-            lambda: ZmqSubProtocol(sub_closed),
-            aiozmq.zmq.SUB)
+            lambda: ZmqSubProtocol(server, sub_closed),
+            aiozmq.zmq.SUB, loop=loop)
 
         if is_ipv6:
             self.subscriber.setsockopt(aiozmq.zmq.IPV6, 1)
 
         for peer in server.peers.values():
-            if not peer[b'id'] == server.id:
-                await self.subscriber.connect(peer['address'])
+            await self.subscriber.connect(peer['address'])
 
         self.subscriber.subscribe(self.TOPIC)
-        self.subscriber.subscribe(server.id)
-
-    def setup(self, server):
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(self._setup(server))
+        self.subscriber.subscribe(server.id.encode())
 
     async def add_peer(self, peer):
         await self.subscriber.connect(peer['address'])
@@ -248,10 +229,11 @@ class ZMQTransport(BaseTransport):
         self.publisher.write([self.TOPIC, models.RaftMessage({'content': data}).pack()])
 
     def send_to(self, data, address):
-        self.publisher.write([address, models.RaftMessage({'content': data}).pack()])
+        self.publisher.write([address.encode(), models.RaftMessage({'content': data}).pack()])
 
     def close(self):
-        pass
+        self.publisher.close()
+        self.subscriber.close()
 
 
 class ResetablePeriodicTask:

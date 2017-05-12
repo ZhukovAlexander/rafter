@@ -24,6 +24,7 @@ from abc import ABCMeta
 import asyncio
 import logging
 from inspect import isawaitable
+import json
 
 import asyncssh
 import crypt
@@ -87,8 +88,9 @@ class BaseService(metaclass=ABCMeta):
                 raise UnknownCommand('Command not found: {0}'.format(name))
         return await cmd(*args, **kwargs)
 
-    def setup(self, server):
+    async def setup(self, server, loop):
         self.server = server
+        self.loop = loop
 
     @command(write=False)
     def peers(self):  # pragma: nocover
@@ -107,22 +109,21 @@ class TelnetService(BaseService):
 
     _prompt = b'>'
 
-    def __init__(self, host: str ='127.0.0.1', port: int = 8888):
+    def __init__(self, host: str ='::', port: int = 8888):
         super().__init__()
         self.host, self.port = host, port
 
-    def setup(self, server):
-        super().setup(server)
-        loop = asyncio.get_event_loop()
-        # coro = asyncio.start_server(self.handle_echo, self.host, self.port, loop=loop)
-        # loop.run_until_complete(coro)
+    async def setup(self, raft_server, loop):
+        await super().setup(raft_server, loop)
+        self.tcp_server = await asyncio.start_server(self.handle_echo, self.host, self.port, loop=loop)
+        logger.info('Serving {} on [{}]:{}'.format(self.__class__.__name__, self.host, self.port))
 
     async def execute_command(self, cmd, args):
         try:
             result = await self.dispatch(cmd, *args)
         except Exception as e:
             return str(e).encode()
-        return result
+        return json.dumps(result).encode()
 
     async def handle_echo(self, reader, writer):
         running = True
@@ -134,7 +135,9 @@ class TelnetService(BaseService):
             if not message:
                 continue
             elif message == 'help':
-                writer.write(b'Type the name of the command followed by the arguments')
+                writer.write(b'Type the name of the command followed by the arguments\n')
+                writer.write(b'Available commands:\n\t')
+                writer.write('\n\t'.join(c for c in dir(self) if isinstance(getattr(self, c), ExposedCommand)).encode())
             elif message in ('exit', 'q', 'quit'):
                 writer.write(b'Buy...')
                 running = False
@@ -145,7 +148,7 @@ class TelnetService(BaseService):
             writer.write(b'\n')
             await writer.drain()
 
-            print("Close the client socket")
+        print("Closing the client connection")
         writer.close()
 
 passwords = {'rafter': 'rafter'}

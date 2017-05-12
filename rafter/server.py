@@ -85,11 +85,12 @@ class RaftServer:
         self.next_index = defaultdict(lambda: self.log.commit_index + 1)
 
         self.loop = loop or asyncio.get_event_loop()
+        # self.loop.set_debug(True)
         self.queue = asyncio.Queue(loop=self.loop)
 
         self.state = serverstate.Follower(self, self.log)
 
-        self.election_timer = ResetablePeriodicTask(callback=lambda: self.state.election())
+        self.election_timer = ResetablePeriodicTask(callback=self.state.election)
         self.heartbeats = ResetablePeriodicTask(interval=0.05,
                                                 callback=lambda: self.heartbeat(bootstraps=bootstrap))
 
@@ -118,7 +119,7 @@ class RaftServer:
 
     @property
     def commit_index(self):
-        return self.storage['commit_index']
+        return self.storage.setdefault('commit_index', 0)
 
     @commit_index.setter
     def commit_index(self, value: int):
@@ -136,24 +137,27 @@ class RaftServer:
     def peers(self):  # pragma: nocover
         return self.storage.setdefault('peers', {})
 
-    def start(self):
+    async def start(self):
 
         for signame in ('SIGINT', 'SIGTERM'):
             # <http://stackoverflow.com/questions/23313720/asyncio-how-can-coroutines-be-used-in-signal-handlers>
             self.loop.add_signal_handler(getattr(signal, signame), self.stop, signame)
 
+        await self.service.setup(self, self.loop)
+        await self.transport.setup(self, self.loop)
+
         self.election_timer.start(random.randint(15, 30) / 100)
-        self.service.setup(self)
-        self.transport.setup(self)
 
     def stop(self, signame):  # pragma: nocover
         logger.info('Got signal {}, exiting...'.format(signame))
         self.transport.close()
         self.loop.stop()
 
-    def handle(self, message_type, **kwargs):
+    def handle(self, message_type, from_peer, **kwargs):
         """Dispatch to the appropriate state method"""
-        return getattr(self.state, message_type)(**kwargs)
+        res =  getattr(self.state, message_type)(**kwargs)
+        if res is not None:
+            self.transport.send_to(res, from_peer)
 
     async def _apply_single(self, cmd, invocation_id, args, kwargs, index=None):
 
@@ -188,13 +192,13 @@ class RaftServer:
             reverse=True
         )
         majority_index = all_match_index[int(len(all_match_index) / 2)]
-        current_commit_index = self.log.commit_index
+        current_commit_index = self.commit_index
         commited_term = self.log[majority_index].term
 
         # per Raft spec, commit only entries from the current term
         if self.term == commited_term:
             new_commit_index = max(current_commit_index, majority_index)
-            self.log.commit_index = new_commit_index
+            self.commit_index = new_commit_index
             return self.apply_commited(current_commit_index + 1, new_commit_index)
 
     async def handle_write_command(self, slug, *args, **kwargs):
@@ -212,14 +216,14 @@ class RaftServer:
             raise NotLeaderException('This server is not a leader')
         return await self._apply_single(command, None, args, kwargs)
 
-    async def send_append_entries(self, entries=(), destination=('239.255.255.250', 10000)):
+    async def send_append_entries(self, entries=()):
         prev = self.log[entries[0].index - 1] if entries else None
         message = dict(
             term=self.term,
             leader_id=self.id,
             prev_log_index=prev.index if prev else None,
             prev_log_term=prev.term if prev else None,
-            leader_commit=self.log.commit_index,
+            leader_commit=self.commit_index,
             entries=entries)
 
         return self.transport.broadcast(message)
@@ -229,8 +233,8 @@ class RaftServer:
         message = dict(
             term=self.term,
             peer=self.id,
-            last_log_index=last.index if last else 0,
-            last_log_term=last.term if last else 0
+            last_log_index=last.index if last is not None else 0,
+            last_log_term=last.term if last is not None else 0
         )
 
         return self.transport.broadcast(message)

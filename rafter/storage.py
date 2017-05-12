@@ -128,7 +128,7 @@ class PersistentDict(collections.abc.MutableMapping):
             val = txn.get(packb(key))
         if val is None:
             raise KeyError(key)
-        return unpackb(val)
+        return unpackb(val, encoding='utf-8')
 
     def __delitem__(self, key):
         with self.env.begin(write=True, db=self.db) as txn:
