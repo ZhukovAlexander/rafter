@@ -65,12 +65,13 @@ class BaseTransport(metaclass=abc.ABCMeta):
     def close(self):
         raise NotImplementedError
 
+
 MCAST_GROUP_IPV6 = 'ff15:7079:7468:6f6e:6465:6d6f:6d63:6173'
 
 
 class UDPMulticastTransport(BaseTransport):
 
-    def __init__(self, host='::', port=10000, multicast_group=MCAST_GROUP_IPV6):
+    def __init__(self, host: str = '::', port: int = 10000, multicast_group: str = MCAST_GROUP_IPV6):
         super().__init__()
         self.host = host
         self.port = port
@@ -187,10 +188,11 @@ class ZMQTransport(BaseTransport):
 
     TOPIC = b'_RAFTER'
 
-    def __init__(self, host='::', port=9999):
+    def __init__(self, host: str = '::', port: int = 9999, connect: list = None):
         super().__init__()
         self.host = host
         self.port = port
+        self.connect = connect if connect is not None else []
         self.address = 'tcp://[{host}]:{port}'.format(host=host, port=port)
 
     async def setup(self, server, loop):
@@ -215,6 +217,9 @@ class ZMQTransport(BaseTransport):
 
         if is_ipv6:
             self.subscriber.setsockopt(aiozmq.zmq.IPV6, 1)
+
+        for address in self.connect:
+            await self.subscriber.connect(address)
 
         for peer in server.peers.values():
             await self.subscriber.connect(peer['address'])

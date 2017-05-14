@@ -54,10 +54,8 @@ class StateBase:
     def append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
         if term < self._server.term:
             return dict(peer=self._server.id, index=self._server.commit_index, term=self._server.term, success=False)
-        if not entries:  # heartbeat
-            self._server.election_timer.reset()
-        else:
-            return self._append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
+        self._server.election_timer.reset()
+        return self._append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
     def request_vote(self, term, peer, last_log_index, last_log_term):
         if term < self._server.term:
@@ -106,7 +104,6 @@ class Leader(StateBase):
 
     def append_entries_response(self, peer, term, index, success):
         if self._server.term == term:  # maybe this is not needed?
-            logger.debug('self.current_term == term:')
             if success:
                 return self._server.maybe_commit(peer, term, index)
             return self.retry_append_entries(term, index)

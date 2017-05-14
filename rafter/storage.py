@@ -43,10 +43,10 @@ def from_bytes(b):
 class RaftLog(collections.abc.MutableSequence):
     """Implement raft log on top of the LMDB storage."""
 
-    def __init__(self, env=None, db=None):
+    def __init__(self, path=None):
 
-        self.env = env or lmdb.open('/tmp/rafter.lmdb', max_dbs=10)
-        self.db = db or self.env.open_db(b'rafter')
+        self.env = lmdb.open(path if path is not None else'/tmp/rafter.lmdb', max_dbs=10)
+        self.db = self.env.open_db(b'rafter')
         self.attrs_store = self.env.open_db(b'meta')
 
     def txn(self, db=None, write=False):
@@ -114,10 +114,10 @@ class RaftLog(collections.abc.MutableSequence):
 
 class PersistentDict(collections.abc.MutableMapping):
 
-    def __init__(self, env=None, db=None, *args, **kwargs):
+    def __init__(self, path=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.env = env or lmdb.open('/tmp/rafter.lmdb', max_dbs=10)
-        self.db = db or self.env.open_db(b'storage')
+        self.env = lmdb.open(path or '/tmp/rafter.lmdb', max_dbs=10)
+        self.db = self.env.open_db(b'storage')
 
     def __setitem__(self, key, value):
         with self.env.begin(write=True, db=self.db) as txn:
