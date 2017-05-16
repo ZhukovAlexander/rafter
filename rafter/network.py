@@ -258,9 +258,8 @@ class ResetablePeriodicTask:
             self._callback()
             self._handler = self._loop.call_later(self.interval, self._run)
 
-    def start(self, interval=None):
+    def start(self):
         self._running = True
-        self.interval = interval or self.interval
         self._handler = self._loop.call_later(self.interval, self._run)
 
     def stop(self):

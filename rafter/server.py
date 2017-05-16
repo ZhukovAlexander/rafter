@@ -85,12 +85,11 @@ class RaftServer:
         self.next_index = defaultdict(lambda: self.log.commit_index + 1)
 
         self.loop = loop or asyncio.get_event_loop()
-        # self.loop.set_debug(True)
-        self.queue = asyncio.Queue(loop=self.loop)
 
         self.state = serverstate.Follower(self, self.log)
 
-        self.election_timer = ResetablePeriodicTask(callback=self.state.election)
+        self.election_timer = ResetablePeriodicTask(interval=random.randint(15, 30) / 100,
+                                                    callback=self.state.election)
         self.heartbeats = ResetablePeriodicTask(interval=0.05,
                                                 callback=lambda: self.heartbeat(bootstraps=bootstrap))
 
@@ -146,7 +145,7 @@ class RaftServer:
         await self.service.setup(self, self.loop)
         await self.transport.setup(self, self.loop)
 
-        self.election_timer.start(random.randint(15, 30) / 100)
+        self.election_timer.start()
 
     def stop(self, signame):  # pragma: nocover
         logger.info('Got signal {}, exiting...'.format(signame))
