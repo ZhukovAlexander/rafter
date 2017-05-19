@@ -53,17 +53,17 @@ class StateBase:
 
     def append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
         if term < self._server.term:
-            return dict(peer=self._server.id, index=self._server.commit_index, term=self._server.term, success=False)
+            return self._server.id, self._server.commit_index, self._server.term, False
         self._server.election_timer.reset()
-        return self._append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
+        return ('append_entries_response', self._server.id) + self._append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
     def request_vote(self, term, peer, last_log_index, last_log_term):
         if term < self._server.term:
-            return dict(term=self._server.term, vote=False)
+            return self._server.term, False
         elif term > self._server.term:
             self.to_follower(term)
             return self._server.state.request_vote(term, peer, last_log_index, last_log_term)
-        return self._request_vote(term, peer, last_log_index, last_log_term)
+        return ('request_vote_response', self._server.id) + self._request_vote(term, peer, last_log_index, last_log_term)
 
     def append_entries_response(self, peer, term, index, success):
         pass  # pragma: no cover
@@ -83,14 +83,14 @@ class Leader(StateBase):
 
     def _append_entries(self, term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=None):
         if leader_id == self._server.id:  # handle append entries rpc from itself
-            return dict(peer=self._server.id, index=len(self.log) - 1, term=term, success=True)
+            return self._server.id, len(self.log) - 1, term, True
         self.to_follower(term)
         return self._server.state.append_entries(term, leader_id, prev_log_index, prev_log_term, leader_commit, entries=entries)
 
     def _request_vote(self, term, peer, last_log_index, last_log_term):
         if peer == self._server.id:
-            return dict(term=self._server.term, vote=True, peer=self._server.id)
-        return dict(term=self._server.term, vote=False, peer=self._server.id)
+            return self._server.term, True, self._server.id
+        return self._server.term, False, self._server.id
 
     def retry_append_entries(self, term, index):
         entry = self.log[index]
@@ -120,8 +120,8 @@ class Candidate(StateBase):
 
     def _request_vote(self, term, peer, last_log_index, last_log_term):
         if peer == self._server.id:
-            return dict(term=self._server.term, vote=True, peer=self._server.id)
-        return dict(term=self._server.term, vote=False, peer=self._server.id)
+            return self._server.term, True, self._server.id
+        return self._server.term, False, self._server.id
 
     def request_vote_response(self, term, vote, peer):
         if vote:

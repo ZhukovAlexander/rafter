@@ -25,17 +25,10 @@ import abc
 import logging
 
 import aiozmq
+import msgpack
 
-from . import models
 
 logger = logging.getLogger(__name__)
-
-HANDELERS = {
-    models.AppendEntriesRPCRequest: ('append_entries', models.AppendEntriesRPCResponse),
-    models.AppendEntriesRPCResponse: ('append_entries_response', models.AppendEntriesRPCRequest),
-    models.RequestVoteRPCRequest: ('request_vote', models.RequestVoteRPCResponse),
-    models.RequestVoteRPCResponse: ('request_vote_response', None)
-}
 
 
 class BaseTransport(metaclass=abc.ABCMeta):
@@ -176,9 +169,8 @@ class ZmqSubProtocol(aiozmq.ZmqProtocol):
 
     def msg_received(self, msg):
         topic, data = msg
-        content = models.RaftMessage.unpack(data).content
-        handler, resp_class = HANDELERS[type(content)]
-        self.server.handle(handler, content.get('peer', content.get('leader_id', content.get('peer'))), **content.to_native())
+        message_type, from_peer, *args = msgpack.unpackb(data, encoding='utf-8')
+        self.server.route(message_type, from_peer, args)
 
     def connection_lost(self, exc):
         self.on_close.set_result(exc)
@@ -231,10 +223,10 @@ class ZMQTransport(BaseTransport):
         await self.subscriber.connect(peer['address'])
 
     def broadcast(self, data):
-        self.publisher.write([self.TOPIC, models.RaftMessage({'content': data}).pack()])
+        self.publisher.write([self.TOPIC, msgpack.packb(data)])
 
     def send_to(self, data, address):
-        self.publisher.write([address.encode(), models.RaftMessage({'content': data}).pack()])
+        self.publisher.write([address.encode(), msgpack.packb(data)])
 
     def close(self):
         self.publisher.close()

@@ -28,8 +28,6 @@ import asyncio
 import lmdb
 from msgpack import packb, unpackb
 
-from .models import LogEntry
-
 
 def to_bytes(i):
     return i.to_bytes(8, sys.byteorder)
@@ -80,7 +78,7 @@ class RaftLog(collections.abc.MutableSequence):
             if isinstance(index, int):
                 if index >= len(self) or index < -len(self):
                     raise IndexError('log index out of range')
-                return LogEntry.unpack(txn.get(to_bytes(len(self) + index if index < 0 else index)))
+                return unpackb(txn.get(to_bytes(len(self) + index if index < 0 else index)))
 
             elif isinstance(index, slice):
                 cur = txn.cursor()
@@ -97,7 +95,7 @@ class RaftLog(collections.abc.MutableSequence):
         if value.index != len(self):
             raise IndexError('Can\'t append: value.index:{0} != len(self):{1}'.format(value.index, len(self)))
         with self.txn(write=True) as txn:
-            txn.put(to_bytes(value.index), value.pack(), append=True)
+            txn.put(to_bytes(value['index']), packb(value), append=True)
 
     def extend(self, l):
         with self.txn(write=True) as txn:
@@ -108,7 +106,7 @@ class RaftLog(collections.abc.MutableSequence):
         return last_log_term > last.term or last_log_term == last.term and last.index <= last_log_index
 
     def entry(self, term, command, args=(), kwargs=None):
-        self.append(LogEntry(dict(index=len(self), term=term, command=command, args=args, kwargs=kwargs or {})))
+        self.append(dict(index=len(self), term=term, command=command, args=args, kwargs=kwargs or {}))
         return self[-1]
 
 

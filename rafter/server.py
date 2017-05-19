@@ -22,7 +22,7 @@ import logging
 import os
 import json
 from collections import defaultdict
-from uuid import uuid4
+import uuid
 import typing
 
 import uvloop
@@ -30,7 +30,6 @@ import uvloop
 
 from . import serverstate
 from . import storage as store
-from . import models
 from .network import UPDProtocolMsgPackServer, ResetablePeriodicTask, UDPMulticastTransport
 from .utils import AsyncDictWrapper
 from .exceptions import NotLeaderException
@@ -106,7 +105,7 @@ class RaftServer:
 
     @property
     def id(self):  # pragma: nocover
-        return self.storage.setdefault('id', uuid4().hex)
+        return self.storage.setdefault('id', uuid.uuid4().hex)
 
     @property
     def term(self):  # pragma: nocover
@@ -152,25 +151,25 @@ class RaftServer:
         self.transport.close()
         self.loop.stop()
 
-    def handle(self, message_type, from_peer, **kwargs):
+    def route(self, message_type, from_peer, args):
         """Dispatch to the appropriate state method"""
-        res =  getattr(self.state, message_type)(**kwargs)
+        res = getattr(self.state, message_type)(*args)
         if res is not None:
             self.transport.send_to(res, from_peer)
 
-    async def _apply_single(self, cmd, invocation_id, args, kwargs, index=None):
+    async def _apply_single(self, cmd, args, kwargs, index=None):
 
         try:
             res = dict(result=await getattr(self.service, cmd).apply(*args, **kwargs) if cmd else None)
+            print(res)
 
         except Exception as e:
             logger.exception('Exception during a command invocation')
             res = dict(error=True, msg=str(e))
 
         finally:
-            if invocation_id is None:
-                return res['result']
-            await self.set_result(invocation_id, res)
+            uuid_key = uuid.uuid5(uuid.UUID(self.id), str((args, kwargs)))
+            await self.set_result(uuid_key.hex, res)
 
     def apply_commited(self, start, end):
         return asyncio.ensure_future(asyncio.wait(map(
@@ -213,28 +212,18 @@ class RaftServer:
     async def handle_read_command(self, command, *args, **kwargs):
         if not self.state.is_leader():
             raise NotLeaderException('This server is not a leader')
-        return await self._apply_single(command, None, args, kwargs)
+        return await self._apply_single(command, args, kwargs)
 
     async def send_append_entries(self, entries=()):
         prev = self.log[entries[0].index - 1] if entries else None
-        message = dict(
-            term=self.term,
-            leader_id=self.id,
-            prev_log_index=prev.index if prev else None,
-            prev_log_term=prev.term if prev else None,
-            leader_commit=self.commit_index,
-            entries=entries)
+        message = ('append_entries', self.id, self.term, self.id, prev.index if prev else None, prev.term if prev else None, self.commit_index, entries)
 
         return self.transport.broadcast(message)
 
     def broadcast_request_vote(self):
         last = self.log[-1] if len(self.log) > 0 else None
-        message = dict(
-            term=self.term,
-            peer=self.id,
-            last_log_index=last.index if last is not None else 0,
-            last_log_term=last.term if last is not None else 0
-        )
+        message = ('request_vote', self.id, self.term, self.id, last[b'index'] if last is not None else 0, last[b'term'] if last is not None else 0)
+
 
         return self.transport.broadcast(message)
 

@@ -50,11 +50,11 @@ class ExposedCommand:
             self._server = instance.server
         return self
 
-    async def __call__(self, *args, invocation_id=None, **kwargs):
+    async def __call__(self, *args, **kwargs):
         if not self._service:
             raise UnboundExposedCommand()
         if self._write:
-            return await self._server.handle_write_command(self.slug, invocation_id, *args, **kwargs)
+            return await self._server.handle_write_command(self.slug, *args, **kwargs)
         return await self._server.handle_read_command(self.slug, *args, **kwargs)
 
     async def apply(self, *args, **kwargs):
